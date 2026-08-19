@@ -1,0 +1,62 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+!website/.env.example
+.streamlit/secrets.toml
+
+# Node
+website/node_modules/
+website/dist/
+website/.vercel/
+.vercel/
+
+# Python virtualenvs
+venv/
+.venv/
+env/
+
+# Python bytecode / packaging
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Test / coverage / type checkers
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# IDE / OS / editor
+.idea/
+.vscode/
+.cursor/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs and local runtime data
+*.log
+.cache/
+tmp/
+temp/
+data/
+
+# Deploy tooling
+.railway/
+
+# Large model artifacts (if added later)
+*.pt
+*.pth
+*.onnx
+*.bin
+*.dat
