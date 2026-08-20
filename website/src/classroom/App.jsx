@@ -607,6 +607,7 @@ function StudentDesk({ session, setError, onLogout }) {
   const [code, setCode] = useState(() => joinCodeFromUrl());
   const [joined, setJoined] = useState("");
   const [risk, setRisk] = useState(null);
+  const [workspace, setWorkspace] = useState(null);
 
   const reload = async () => {
     try {
@@ -619,6 +620,18 @@ function StudentDesk({ session, setError, onLogout }) {
 
   useEffect(() => {
     reload();
+    let live = true;
+    api
+      .workspace()
+      .then((ws) => {
+        if (live) setWorkspace(ws);
+      })
+      .catch((err) => {
+        if (live) setError(err.message);
+      });
+    return () => {
+      live = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -711,9 +724,15 @@ function StudentDesk({ session, setError, onLogout }) {
           </div>
         </div>
       )}
-      {tab === "progress" && <SuccessWorkspace session={session} setError={setError} defaultModule="My Digital Twin" />}
-      {tab === "mentorship" && <SuccessWorkspace session={session} setError={setError} defaultModule="Anonymous Mentorship" />}
-      {tab === "account" && <SuccessWorkspace session={session} setError={setError} defaultModule="Account" />}
+      {tab !== "subjects" && (
+        <SuccessWorkspace
+          session={session}
+          setError={setError}
+          defaultModule={tab === "mentorship" ? "Anonymous Mentorship" : tab === "account" ? "Account" : "My Digital Twin"}
+          cached={workspace}
+          onCached={setWorkspace}
+        />
+      )}
       <RiskWidget
         payload={risk?.risk}
         onGoto={(kind) => {

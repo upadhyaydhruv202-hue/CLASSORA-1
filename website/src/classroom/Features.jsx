@@ -69,19 +69,20 @@ function profileRows(profiles = []) {
   }));
 }
 
-export default function SuccessWorkspace({ session, setError, defaultModule }) {
-  const [data, setData] = useState(null);
+export default function SuccessWorkspace({ session, setError, defaultModule, cached = null, onCached }) {
+  const [data, setData] = useState(cached);
   const [module, setModule] = useState(defaultModule || "");
   const [pick, setPick] = useState("");
   const [busy, setBusy] = useState(false);
   const [stalled, setStalled] = useState("");
 
-  const load = async () => {
+  const load = async (force = false) => {
     try {
       setStalled("");
-      const ws = await api.workspace();
+      const ws = await api.workspace(force);
       setData(ws);
-      setModule((m) => m || ws.modules?.[0] || "");
+      onCached?.(ws);
+      setModule((current) => defaultModule || current || ws.modules?.[0] || "");
       if (!pick && ws.profiles?.[0]) setPick(String(ws.profiles[0].student_id));
     } catch (err) {
       setError(err.message);
@@ -89,7 +90,19 @@ export default function SuccessWorkspace({ session, setError, defaultModule }) {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (cached) setData(cached);
+  }, [cached]);
+
+  useEffect(() => {
+    if (defaultModule) setModule(defaultModule);
+  }, [defaultModule]);
+
+  useEffect(() => {
+    if (cached) return undefined;
+    load();
+    return undefined;
+  }, []);
 
   useEffect(() => {
     const onGoto = (event) => {
@@ -111,7 +124,7 @@ export default function SuccessWorkspace({ session, setError, defaultModule }) {
     setError("");
     try {
       await fn();
-      await load();
+      await load(true);
     } catch (err) {
       setError(err.message);
     } finally {

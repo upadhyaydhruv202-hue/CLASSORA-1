@@ -22,6 +22,18 @@ async function request(path, { method = "GET", body, form, auth = true } = {}) {
   return data;
 }
 
+let workspacePromise = null;
+
+function loadWorkspace(force = false) {
+  if (force || !workspacePromise) {
+    workspacePromise = request("/api/success/workspace").catch((err) => {
+      workspacePromise = null;
+      throw err;
+    });
+  }
+  return workspacePromise;
+}
+
 export const api = {
   health: () => request("/api/health", { auth: false }),
   me: () => request("/api/me"),
@@ -74,7 +86,7 @@ export const api = {
   teacherInvites: () => request("/api/teacher/invites"),
   loginHistory: () => request("/api/teacher/login-history"),
   shareSubject: (code) => request(`/api/teacher/share/${encodeURIComponent(code)}`),
-  workspace: () => request("/api/success/workspace"),
+  workspace: (force = false) => loadWorkspace(force),
   sendHelp: (body) => request("/api/success/help", { method: "POST", body }),
   bookAppointment: (body) => request("/api/success/appointment", { method: "POST", body }),
   submitRecommend: (body) => request("/api/success/recommend", { method: "POST", body }),
@@ -99,10 +111,12 @@ export const api = {
 
 export function saveSession(token) {
   localStorage.setItem(TOKEN_KEY, token);
+  workspacePromise = null;
 }
 
 export function clearSession() {
   localStorage.removeItem(TOKEN_KEY);
+  workspacePromise = null;
 }
 
 export function hasSession() {

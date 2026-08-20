@@ -271,13 +271,15 @@ def success_workspace(session: dict = Depends(require_session)):
     twin_rows = profiles[:1] if role == "student" else profiles[:20]
     for profile in twin_rows:
         twins[str(profile["student_id"])] = build_twin(profile, logs=logs_by_student(bundle).get(profile["student_id"]), role="student" if role == "student" else "staff")
-    mine = None
+    mine = profiles[0] if role == "student" and profiles else None
     risk = None
-    if student_id is not None:
+    if student_id is not None and role != "student":
         mine = student_360(bundle, student_id)
         risk = get_current_risk(student_id, session_state=session, actor_role="student", actor_student_id=student_id)
         if mine:
             twins[str(student_id)] = build_twin(mine, logs=logs_by_student(bundle).get(student_id), role="student")
+    elif student_id is not None and mine:
+        twins[str(student_id)] = twins.get(str(student_id)) or build_twin(mine, logs=logs_by_student(bundle).get(student_id), role="student")
     notes = []
     try:
         if student_id is not None:
@@ -342,9 +344,9 @@ def success_workspace(session: dict = Depends(require_session)):
         "alerts": _alerts(profiles),
         "library": library(),
         "notifications": notes[:30],
-        "appointments": [a for a in (store.select("appointments") or []) if student_id is None or a.get("student_id") == student_id],
-        "tasks": [t for t in (store.select("recovery_tasks") or []) if student_id is None or t.get("student_id") == student_id],
-        "messages": store.select("messages") or [],
+        "appointments": store.select("appointments", **({"student_id": student_id} if student_id is not None else {})),
+        "tasks": store.select("recovery_tasks", **({"student_id": student_id} if student_id is not None else {})),
+        "messages": store.select("messages") if role != "student" else [],
         "institution": inst,
         "mentorship": m_rows,
         "mentorship_admin": admin_m,
