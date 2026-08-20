@@ -43,6 +43,10 @@ def as_face_vector(value):
     return arr
 
 
+def dlib_ready():
+    return _dlib_models is not None
+
+
 def load_dlib_models():
     global _dlib_models
     if _dlib_models is None:

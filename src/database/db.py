@@ -23,10 +23,10 @@ def create_teacher(username, password, name):
 
 
 def teacher_login(username, password):
-    response = supabase.table("teachers").select("*").eq("username", username).execute()
+    response = supabase.table("teachers").select("teacher_id, username, password, name").eq("username", username).limit(1).execute()
     if response.data:
         teacher = response.data[0]
-        if check_pass(password, teacher['password']):
+        if check_pass(password, teacher["password"]):
             return teacher
     return None
 
@@ -52,20 +52,15 @@ def create_subject(subject_code, name, section, teacher_id):
     return response.data
 
 def get_teacher_subjects(teacher_id):
-    response = supabase.table('subjects').select("*, subject_students(count), attendance_logs(timestamp)").eq("teacher_id", teacher_id).execute()
-    subjects = response.data
-
-
+    response = supabase.table("subjects").select(
+        "subject_id, subject_code, name, section, teacher_id, created_at, subject_students(count)"
+    ).eq("teacher_id", teacher_id).execute()
+    subjects = response.data or []
     for sub in subjects:
-        sub['total_students'] = sub.get("subject_students", [{}])[0].get('count', 0) if sub.get('subject_students') else 0
-        attendance = sub.get('attendance_logs', [])
-        unique_sessions = len(set(log['timestamp'] for log in attendance))
-        sub['total_classes'] = unique_sessions
-
-
-        sub.pop('subject_student', None)
-        sub.pop('attendance_logs', None)
-
+        counts = sub.get("subject_students") or [{}]
+        sub["total_students"] = counts[0].get("count", 0) if counts else 0
+        sub["total_classes"] = 0
+        sub.pop("subject_students", None)
     return subjects
 
 

@@ -37,12 +37,6 @@ async def lifespan(_app):
         load_dlib_models()
     except Exception:
         pass
-    try:
-        from src.pipelines.voice_pipeline import warmup_voice_encoder
-
-        warmup_voice_encoder()
-    except Exception:
-        pass
     yield
 
 
@@ -132,13 +126,12 @@ def health():
     }
     face_loaded = False
     try:
-        from src.pipelines.face_pipeline import load_dlib_models
+        from src.pipelines.face_pipeline import dlib_ready
 
-        load_dlib_models()
-        face_loaded = True
+        face_loaded = dlib_ready()
     except Exception:
         face_loaded = False
-    face_ready = face_loaded and all(models[key] for key in ("numpy", "dlib", "face_recognition_models"))
+    face_ready = all(models[key] for key in ("numpy", "dlib", "face_recognition_models"))
     voice_ready = all(models[key] for key in ("numpy", "librosa", "resemblyzer"))
     return {
         "ok": True,
@@ -161,7 +154,10 @@ def teacher_login(body: TeacherAuthIn):
         teacher = local.teacher_login(body.username, body.password)
     if not teacher:
         raise HTTPException(status_code=401, detail="Invalid teacher credentials.")
-    mark_login(body.username, "teacher")
+    try:
+        mark_login(body.username, "teacher")
+    except Exception:
+        pass
     return _token_body(session_payload(role="teacher", teacher=teacher))
 
 

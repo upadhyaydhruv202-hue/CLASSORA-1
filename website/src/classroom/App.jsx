@@ -158,9 +158,10 @@ export default function ClassroomApp() {
   const [busy, setBusy] = useState(false);
 
   const boot = async () => {
+    api.health().then(setHealth).catch(() => {});
+    if (!hasSession()) return;
     try {
-      setHealth(await api.health());
-      if (hasSession()) setSession(await api.me());
+      setSession(await api.me());
     } catch {
       setSession(null);
       clearSession();
@@ -483,7 +484,6 @@ function TeacherDesk({ session, health, setError, onLogout }) {
       const rows = await api.teacherSubjects();
       setSubjects(rows);
       if (!subjectId && rows[0]) setSubjectId(String(rows[0].subject_id));
-      setRecords(await api.teacherAttendance());
     } catch (err) {
       setError(err.message);
     }
@@ -492,6 +492,22 @@ function TeacherDesk({ session, health, setError, onLogout }) {
   useEffect(() => {
     reload();
   }, []);
+
+  useEffect(() => {
+    if (tab !== "records") return undefined;
+    let live = true;
+    api
+      .teacherAttendance()
+      .then((rows) => {
+        if (live) setRecords(rows);
+      })
+      .catch((err) => {
+        if (live) setError(err.message);
+      });
+    return () => {
+      live = false;
+    };
+  }, [tab]);
 
   const names = (ids = []) => {
     const roster = preview?.roster || [];
