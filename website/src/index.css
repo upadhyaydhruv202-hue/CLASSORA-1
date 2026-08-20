@@ -83,11 +83,23 @@ body {
 }
 
 .cine-root {
+  position: relative;
+  min-height: 100vh;
+  background: #f8fafc;
+}
+
+.cine-canvas-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.cine-canvas-fallback {
   background:
     radial-gradient(ellipse 70% 45% at 8% 0%, rgba(37, 99, 235, 0.08), transparent 55%),
     radial-gradient(ellipse 50% 40% at 100% 0%, rgba(37, 99, 235, 0.05), transparent 50%),
     #f8fafc;
-  min-height: 100vh;
 }
 
 .cine-canvas,
@@ -151,6 +163,66 @@ body {
   pointer-events: none;
 }
 .cine-lab-out { grid-column: 9 / span 4; }
+.cine-cta {
+  width: min(18.5rem, 36vmin);
+  aspect-ratio: 1;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 0.4rem;
+  border-radius: 50%;
+}
+.cine-cta h2 {
+  font-size: clamp(1.25rem, 2.1vw, 1.7rem);
+  line-height: 0.98;
+  letter-spacing: -0.05em;
+  max-width: 9ch;
+}
+.cine-cta-sub {
+  margin: 0;
+  max-width: 12.5rem;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #475569;
+}
+.cine-cta-line {
+  margin: 0;
+  max-width: 12rem;
+  font-family: var(--font-display);
+  font-size: clamp(0.78rem, 1.05vw, 0.92rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.25;
+  color: #0f172a;
+}
+.cine-cta .cine-btn {
+  min-height: 38px;
+  padding: 0.45rem 0.95rem;
+  font-size: 11px;
+  width: 100%;
+  max-width: 11rem;
+}
+.cine-cta-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.15rem;
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .cine-cta {
+    width: min(16.5rem, 72vmin);
+    padding: 1.25rem 1rem;
+    gap: 0.35rem;
+  }
+}
 
 .cine-display {
   font-family: var(--font-display);
@@ -398,6 +470,15 @@ select.cine-select {
   }
   .cine-shell {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .cine-section {
+    min-height: auto;
+    padding: calc(var(--cine-nav) + 20px) 0 48px;
+  }
+  .cine-stage,
+  .cine-lab-stage {
+    display: none;
+    min-height: 0;
   }
 }
 

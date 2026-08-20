@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   APP_URL,
   classroomStudents,
-  impactMetrics,
+  impactCapabilities,
   interventions,
   networkStudents,
   pipeline,
@@ -27,30 +27,12 @@ function Section({ id, children }) {
   );
 }
 
-function useCount(active, target) {
-  const [n, setN] = useState(0);
-  useEffect(() => {
-    if (!active) return undefined;
-    const t0 = performance.now();
-    let id;
-    const tick = (now) => {
-      const u = Math.min((now - t0) / 1400, 1);
-      setN(Math.round(target * (1 - Math.pow(1 - u, 3))));
-      if (u < 1) id = requestAnimationFrame(tick);
-    };
-    id = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(id);
-  }, [active, target]);
-  return n;
-}
-
-function Metric({ label, value, live }) {
-  const n = useCount(live, value);
+function Capability({ label, body }) {
   return (
-    <div className="cine-panel rounded-2xl p-5">
-      <p className="font-mono text-[10px] tracking-[0.18em] text-[#64748B]">{label}</p>
-      <p className="mt-2 font-display text-[clamp(1.6rem,3vw,2.4rem)] tracking-[-0.04em]">{n.toLocaleString()}</p>
-    </div>
+    <article className="cine-panel rounded-2xl p-5">
+      <p className="font-mono text-[10px] tracking-[0.18em] text-[#2563EB]">{label}</p>
+      <p className="mt-2 text-[15px] leading-6 text-[#0F172A]">{body}</p>
+    </article>
   );
 }
 
@@ -61,8 +43,6 @@ export default function Overlays({ engine, onHotNode }) {
   const [factor, setFactor] = useState(null);
   const [probe, setProbe] = useState(2);
   const [node, setNode] = useState(0);
-  const [impactLive, setImpactLive] = useState(false);
-  const impactRef = useRef(null);
   const pred = useMemo(() => predict(form), [form]);
 
   useEffect(() => {
@@ -77,15 +57,17 @@ export default function Overlays({ engine, onHotNode }) {
     engine.current.instHover = node;
   }, [engine, node]);
 
-  useEffect(() => {
-    const el = impactRef.current;
-    if (!el) return undefined;
-    const io = new IntersectionObserver(([e]) => setImpactLive(e.isIntersecting), { threshold: 0.35 });
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
-
   const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  const highlightFactor = (key, i) => {
+    setFactor(key);
+    engine.current.factor = i;
+  };
+
+  const clearFactor = () => {
+    setFactor(null);
+    engine.current.factor = -1;
+  };
 
   const simulate = () => {
     if (simulating) return;
@@ -118,7 +100,7 @@ export default function Overlays({ engine, onHotNode }) {
     <div className="relative">
       <Section id="experience">
         <div className="cine-span-5">
-          <p className="cine-kicker">AI Early Warning System · Online</p>
+          <p className="cine-kicker">AI attendance and student success</p>
           <h1 className="cine-display mt-5 text-[clamp(3rem,7.2vw,6.2rem)]">
             Predict Risk.
             <br />
@@ -131,7 +113,6 @@ export default function Overlays({ engine, onHotNode }) {
               Explore the AI
             </Mag>
           </div>
-          <p className="mt-8 font-mono text-[11px] tracking-[0.16em] text-[#475569]">87% prediction confidence</p>
         </div>
         <div className="cine-stage" aria-hidden />
       </Section>
@@ -141,6 +122,7 @@ export default function Overlays({ engine, onHotNode }) {
           <p className="cine-kicker">01 — Detect</p>
           <h2 className="cine-h2 mt-4">Dropout rarely happens suddenly.</h2>
           <p className="cine-body mt-4">There are measurable signals before the exit.</p>
+          <p className="mt-3 font-mono text-[10px] tracking-[0.16em] text-[#64748B]">Illustrative scenario roster — not live campus data.</p>
           <div className="mt-8 flex flex-wrap gap-2">
             {["Attendance ↓", "Performance ↓", "Engagement ↓", "Assignments ↓"].map((s) => (
               <span key={s} className="cine-chip text-[#ef4444]">
@@ -173,8 +155,8 @@ export default function Overlays({ engine, onHotNode }) {
         </div>
         <div className="cine-span-7">
           <article className="cine-panel ml-auto max-w-md rounded-3xl p-6">
-            <p className="font-mono text-[10px] tracking-[0.18em] text-[#2563EB]">Student #{student.id}</p>
-            <h3 className="mt-2 text-xl font-semibold">Investigating a live profile</h3>
+            <p className="font-mono text-[10px] tracking-[0.18em] text-[#2563EB]">Scenario #{student.id}</p>
+            <h3 className="mt-2 text-xl font-semibold">Inspecting a scenario profile</h3>
             <dl className="mt-5 grid grid-cols-2 gap-4 font-mono text-[12px] text-[#475569]">
               <div>
                 Attendance
@@ -232,7 +214,7 @@ export default function Overlays({ engine, onHotNode }) {
         <div className="cine-span-12">
           <p className="cine-kicker">AI Prediction Lab</p>
           <h2 className="cine-h2 mt-3">Student-risk simulator</h2>
-          <p className="cine-body mt-2">Deterministic demo model. Changing conditions changes predicted risk.</p>
+          <p className="cine-body mt-2">Illustrative demo. Changing conditions changes predicted risk. Nothing is written to the database.</p>
         </div>
         <div className="cine-lab-in mt-8">
           <div className="cine-panel space-y-5 rounded-3xl p-6">
@@ -283,8 +265,14 @@ export default function Overlays({ engine, onHotNode }) {
         <div className="cine-lab-stage mt-8 hidden lg:block" aria-hidden />
         <div className="cine-lab-out mt-8">
           <div className="cine-panel flex flex-col items-center rounded-3xl p-8 text-center">
-            <p className="cine-kicker">AI prediction</p>
-            <div className="cine-ring mt-6" style={{ "--p": pred.score, background: `radial-gradient(circle at 50% 50%, #ffffff 58%, transparent 59%), conic-gradient(from -90deg, ${ringColor} calc(${pred.score} * 1%), #e2e8f0 0)` }}>
+            <p className="cine-kicker">Illustrative demo</p>
+            <div
+              className="cine-ring mt-6"
+              style={{
+                "--p": pred.score,
+                background: `radial-gradient(circle at 50% 50%, #ffffff 58%, transparent 59%), conic-gradient(from -90deg, ${ringColor} calc(${pred.score} * 1%), #e2e8f0 0)`,
+              }}
+            >
               <p className="font-display text-[clamp(2.8rem,6vw,4.4rem)] leading-none">{pred.score}%</p>
             </div>
             <p className="mt-5 font-mono text-[12px] tracking-[0.18em]" style={{ color: ringColor }}>
@@ -298,20 +286,16 @@ export default function Overlays({ engine, onHotNode }) {
         <div className="cine-span-6">
           <p className="cine-kicker">02 — Explain</p>
           <h2 className="cine-h2 mt-3">Why is this student at risk?</h2>
-          <p className="cine-body mt-3">Prediction + reasoning. Hover a factor to isolate its contribution.</p>
+          <p className="cine-body mt-3">Prediction + reasoning. Focus or hover a factor to isolate its contribution.</p>
           <div className="mt-8 space-y-5">
             {pred.factors.map((f, i) => (
               <button
                 key={f.key}
                 type="button"
-                onMouseEnter={() => {
-                  setFactor(f.key);
-                  engine.current.factor = i;
-                }}
-                onMouseLeave={() => {
-                  setFactor(null);
-                  engine.current.factor = -1;
-                }}
+                onMouseEnter={() => highlightFactor(f.key, i)}
+                onMouseLeave={clearFactor}
+                onFocus={() => highlightFactor(f.key, i)}
+                onBlur={clearFactor}
                 className={`w-full text-left transition-opacity ${factor && factor !== f.key ? "opacity-30" : "opacity-100"}`}
               >
                 <div className="mb-2 flex justify-between font-mono text-[11px] text-[#475569]">
@@ -338,6 +322,7 @@ export default function Overlays({ engine, onHotNode }) {
                 key={it.id}
                 type="button"
                 data-cursor="OPEN"
+                aria-expanded={open === it.id}
                 onClick={() => setOpen(open === it.id ? null : it.id)}
                 className="cine-panel rounded-2xl p-6 text-left transition-transform hover:-translate-y-1"
               >
@@ -368,12 +353,12 @@ export default function Overlays({ engine, onHotNode }) {
       </Section>
 
       <Section id="impact">
-        <div className="cine-span-12" ref={impactRef}>
+        <div className="cine-span-12">
           <p className="cine-kicker">04 — Improve</p>
-          <h2 className="cine-h2 mt-3">One student becomes a campus.</h2>
-          <div className="mt-10 grid grid-cols-2 gap-4 md:grid-cols-4">
-            {impactMetrics.map((m) => (
-              <Metric key={m.key} label={m.key} value={m.value} live={impactLive} />
+          <h2 className="cine-h2 mt-3">What CLASSORA actually does.</h2>
+          <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
+            {impactCapabilities.map((m) => (
+              <Capability key={m.key} label={m.key} body={m.body} />
             ))}
           </div>
           <div className="mt-6 flex gap-4 font-mono text-[11px] text-[#475569]">
@@ -386,8 +371,9 @@ export default function Overlays({ engine, onHotNode }) {
 
       <Section id="map">
         <div className="cine-span-5">
-          <p className="cine-kicker">Institutional map</p>
-          <h2 className="cine-h2 mt-3">Inspect any node in the network.</h2>
+          <p className="cine-kicker">Illustrative roster</p>
+          <h2 className="cine-h2 mt-3">Inspect a scenario in the network.</h2>
+          <p className="cine-body mt-3">These profiles demonstrate risk bands. They are not live students.</p>
           <div className="mt-8 space-y-2">
             {networkStudents.map((s, i) => (
               <button
@@ -412,7 +398,7 @@ export default function Overlays({ engine, onHotNode }) {
         </div>
         <div className="cine-span-7">
           <article className="cine-panel ml-auto max-w-md rounded-3xl p-6">
-            <p className="font-mono text-[10px] tracking-[0.18em] text-[#2563EB]">Student #{inst.id}</p>
+            <p className="font-mono text-[10px] tracking-[0.18em] text-[#2563EB]">Scenario #{inst.id}</p>
             <dl className="mt-4 grid grid-cols-2 gap-4 font-mono text-[12px] text-[#475569]">
               <div>
                 Risk
@@ -483,26 +469,37 @@ export default function Overlays({ engine, onHotNode }) {
       </Section>
 
       <Section id="demo">
-        <div className="cine-span-12 text-center">
-          <p className="cine-kicker">Don't wait for dropout.</p>
-          <h2 className="cine-display mx-auto mt-4 max-w-4xl text-[clamp(2.4rem,6vw,5rem)]">
-            Predict it. Prevent it.
-          </h2>
-          <p className="mx-auto mt-5 max-w-lg text-[16px] text-[#475569]">Turn early signals into early intervention.</p>
-          <p className="mx-auto mt-8 max-w-xl font-display text-[clamp(1.2rem,2.4vw,1.8rem)] tracking-[-0.03em]">
-            Detect early. Understand deeply. Intervene smarter. Change outcomes.
-          </p>
-          <div className="mt-8 flex flex-wrap justify-center gap-3">
-            <Mag href={APP_URL}>Launch CLASSORA</Mag>
-            <Mag href="#ai-demo" ghost>
-              Explore the AI
-            </Mag>
+        <div className="cine-span-12">
+          <div className="cine-cta">
+            <p className="cine-kicker">Don't wait for dropout.</p>
+            <h2 className="cine-display">
+              Predict it.
+              <br />
+              Prevent it.
+            </h2>
+            <p className="cine-cta-sub">Turn early signals into early intervention.</p>
+            <p className="cine-cta-line">
+              Detect early. Understand deeply.
+              <br />
+              Intervene smarter. Change outcomes.
+            </p>
+            <div className="cine-cta-actions">
+              <Mag href={APP_URL}>Launch CLASSORA</Mag>
+              <Mag href="#ai-demo" ghost>
+                Explore the AI
+              </Mag>
+            </div>
           </div>
-          <footer className="mt-24 text-[12px] text-[#64748B]">
-            <strong className="tracking-[0.18em] text-[#0F172A]">CLASSORA</strong> · Intelligent Learning. Connected Classrooms. · SIH 2026
-          </footer>
         </div>
       </Section>
+
+      <footer className="relative z-[2] pb-16 pt-4">
+        <div className="cine-shell">
+          <p className="cine-span-12 text-center text-[12px] text-[#64748B]">
+            <strong className="tracking-[0.18em] text-[#0F172A]">CLASSORA</strong> · Intelligent Learning. Connected Classrooms. · SIH 2026
+          </p>
+        </div>
+      </footer>
     </div>
   );
 }

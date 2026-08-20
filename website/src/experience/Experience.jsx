@@ -29,6 +29,7 @@ export default function Experience({ active }) {
     sim: 0,
     reduce: false,
     mobile: false,
+    cursor: "",
   });
   const [webgl, setWebgl] = useState(true);
   const [reduce, setReduce] = useState(false);
@@ -84,18 +85,16 @@ export default function Experience({ active }) {
 
   return (
     <div className="cine-root">
-      <Cursor />
+      <Cursor engine={engine} />
       <Nav />
       {active && webgl && !reduce && (
-        <div className="pointer-events-none fixed inset-0 z-0">
+        <div className="cine-canvas-wrap">
           <Suspense fallback={null}>
             <SceneMount engine={engine} dpr={dpr} />
           </Suspense>
         </div>
       )}
-      {(!webgl || reduce) && (
-        <div className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(ellipse_at_70%_40%,rgba(37,99,235,0.10),#F8FAFC_62%)]" />
-      )}
+      {(!webgl || reduce) && <div className="cine-canvas-wrap cine-canvas-fallback" />}
       <main id="main" className="relative z-[1]">
         <Overlays engine={engine} onHotNode={onHotNode} />
       </main>

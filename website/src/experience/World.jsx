@@ -1,17 +1,17 @@
 import { useMemo, useRef } from "react";
+import { ContactShadows } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { pipeline } from "../content";
 
 const CAM = [
-  { t: 0.0, p: [0.08, 1.46, 5.7], l: [1.38, 1.12, 0] },
-  { t: 0.12, p: [0.55, 1.52, 4.15], l: [1.42, 1.18, 0] },
-  { t: 0.26, p: [-0.15, 1.58, 7.15], l: [0.35, 1.05, -1.4] },
-  { t: 0.4, p: [0.05, 1.48, 5.55], l: [0, 1.32, 0.2] },
-  { t: 0.54, p: [1.05, 1.4, 4.35], l: [1.35, 1.16, 0] },
-  { t: 0.66, p: [-0.2, 1.46, 5.9], l: [0.2, 1.12, 0] },
-  { t: 0.8, p: [0.05, 8.4, 17.6], l: [0, 0.15, 0] },
-  { t: 0.94, p: [0.22, 1.4, 3.45], l: [0.85, 1.16, 0] },
+  { t: 0, p: [0.08, 1.52, 3.7], l: [1.38, 1.08, 0] },
+  { t: 0.18, p: [0.35, 1.92, -4.4], l: [0, 0.82, -9.2] },
+  { t: 0.36, p: [0.05, 1.58, -13.4], l: [0, 1.22, -18.2] },
+  { t: 0.54, p: [2.55, 1.72, -22.6], l: [0, 1.22, -27.2] },
+  { t: 0.72, p: [0.12, 9.4, -28.5], l: [0, 0.15, -38] },
+  { t: 0.9, p: [0, 1.52, -43.2], l: [0, 1.12, -48] },
+  { t: 1, p: [0, 1.42, -44.6], l: [0, 1.12, -48] },
 ];
 
 function lerpCam(t) {
@@ -34,6 +34,10 @@ const RISK = {
   low: "#22c55e",
 };
 
+function setCursor(engine, label) {
+  engine.current.cursor = label;
+}
+
 function Student({ engine }) {
   const g = useRef();
   const head = useRef();
@@ -43,12 +47,8 @@ function Student({ engine }) {
   useFrame((state) => {
     if (!g.current) return;
     const t = state.clock.elapsedTime;
-    const s = engine.current.scroll;
-    const hide = THREE.MathUtils.smoothstep(s, 0.72, 0.82) * (1 - THREE.MathUtils.smoothstep(s, 0.9, 0.97));
-    g.current.visible = hide < 0.92;
     const breath = engine.current.reduce ? 0 : Math.sin(t * 1.12) * 0.016;
-    g.current.position.x = engine.current.mobile ? 0.12 : 1.42;
-    g.current.position.y = 0.04 + breath;
+    g.current.position.y = breath;
     const risk = engine.current.risk / 100;
     const sim = engine.current.sim;
     const isolated = THREE.MathUtils.lerp(risk, 0.12, sim);
@@ -59,7 +59,7 @@ function Student({ engine }) {
     if (ring.current) {
       ring.current.rotation.z = t * 0.18;
       ring.current.material.opacity = THREE.MathUtils.lerp(0.55, 0.18, isolated);
-      ring.current.scale.setScalar(THREE.MathUtils.lerp(1.08, 0.78, isolated));
+      ring.current.scale.setScalar(THREE.MathUtils.lerp(1.12, 0.78, isolated));
     }
     if (links.current) {
       links.current.material.opacity = THREE.MathUtils.lerp(0.28, 0.06, isolated);
@@ -91,7 +91,7 @@ function Student({ engine }) {
   }, []);
 
   return (
-    <group ref={g} position={[1.42, 0, 0]}>
+    <group ref={g} position={[1.35, 0, 0]} scale={1.18}>
       <mesh position={[0, 0.74, 0]} userData={{ core: true }}>
         <capsuleGeometry args={[0.23, 0.64, 8, 16]} />
         <meshStandardMaterial {...mat} />
@@ -122,7 +122,7 @@ function Student({ engine }) {
         <torusGeometry args={[0.62, 0.008, 8, 64]} />
         <meshBasicMaterial color="#2563EB" transparent opacity={0.4} />
       </mesh>
-      <lineSegments ref={links} geometry={linkGeom} position={[0, 0, 0]}>
+      <lineSegments ref={links} geometry={linkGeom}>
         <lineBasicMaterial color="#2563EB" transparent opacity={0.2} />
       </lineSegments>
     </group>
@@ -132,14 +132,15 @@ function Student({ engine }) {
 function Dust({ engine }) {
   const mesh = useRef();
   const dummy = useMemo(() => new THREE.Object3D(), []);
-  const count = engine.current.mobile ? 70 : 180;
+  const count = engine.current.mobile ? 90 : 260;
   const seeds = useMemo(() => {
     const s = [];
     for (let i = 0; i < count; i++) {
       s.push({
         a: Math.random() * Math.PI * 2,
-        r: 1.5 + Math.random() * 7.2,
-        y: (Math.random() - 0.35) * 5.2,
+        r: 1.2 + Math.random() * 6.4,
+        z: -Math.random() * 52,
+        y: (Math.random() - 0.25) * 4.6,
         s: 0.55 + Math.random() * 1.5,
       });
     }
@@ -158,7 +159,7 @@ function Dust({ engine }) {
     seeds.forEach((p, i) => {
       const spin = t * 0.045 * p.s + p.a;
       let x = Math.cos(spin) * (p.r + scatter);
-      let z = Math.sin(spin) * (p.r + scatter) * 0.7;
+      let z = p.z + Math.sin(spin) * 0.35;
       let y = p.y + Math.sin(t * 0.38 + p.a) * 0.12;
       const dx = x - mx * 2.4;
       const dy = y - (1.1 + my);
@@ -182,52 +183,66 @@ function Dust({ engine }) {
 
   return (
     <instancedMesh ref={mesh} args={[undefined, undefined, count]}>
-      <sphereGeometry args={[0.012, 6, 6]} />
+      <sphereGeometry args={[0.014, 6, 6]} />
       <meshBasicMaterial color="#2563EB" transparent opacity={0.22} depthWrite={false} />
     </instancedMesh>
   );
 }
 
 function Classroom({ engine }) {
-  const group = useRef();
   const spots = useMemo(
     () => [
-      { x: -1.7, z: -1.55, risk: 0 },
-      { x: -0.7, z: -2.05, risk: 1 },
-      { x: 0.35, z: -1.7, risk: 2 },
-      { x: 1.25, z: -2.25, risk: 1 },
-      { x: 2.15, z: -1.55, risk: 0 },
+      { x: -2.1, z: -0.2, risk: 0 },
+      { x: -1.05, z: -1.15, risk: 1 },
+      { x: 0, z: -0.55, risk: 2 },
+      { x: 1.1, z: -1.35, risk: 1 },
+      { x: 2.15, z: -0.25, risk: 0 },
     ],
     [],
   );
   const colors = [RISK.low, RISK.mid, RISK.high];
+  const refs = useRef([]);
 
   useFrame((state) => {
-    if (!group.current) return;
-    const s = engine.current.scroll;
-    const vis = THREE.MathUtils.smoothstep(s, 0.16, 0.24) * (1 - THREE.MathUtils.smoothstep(s, 0.36, 0.44));
-    group.current.visible = vis > 0.03;
-    group.current.children.forEach((c, i) => {
+    refs.current.forEach((c, i) => {
+      if (!c) return;
       const hot = engine.current.hoverStudent === i;
+      c.position.y = hot ? 0.14 + Math.sin(state.clock.elapsedTime * 2) * 0.02 : 0;
       const body = c.children[0];
-      if (body?.material) body.material.opacity = vis * (hot ? 0.95 : 0.55);
-      const glow = c.children[1];
-      if (glow?.material) glow.material.opacity = vis * (hot ? 0.9 : 0.45);
-      c.position.y = hot ? 0.12 + Math.sin(state.clock.elapsedTime * 2) * 0.02 : 0;
+      if (body?.material) body.material.opacity = hot ? 0.95 : 0.62;
     });
   });
 
   return (
-    <group ref={group} position={[0.4, 0.55, 0]}>
+    <group position={[0, 0.55, -9.2]}>
       {spots.map((p, i) => (
-        <group key={i} position={[p.x, 0, p.z]}>
+        <group
+          key={i}
+          ref={(el) => {
+            refs.current[i] = el;
+          }}
+          position={[p.x, 0, p.z]}
+          onPointerOver={(e) => {
+            e.stopPropagation();
+            engine.current.hoverStudent = i;
+            setCursor(engine, "INSPECT");
+          }}
+          onPointerOut={() => {
+            engine.current.hoverStudent = -1;
+            setCursor(engine, "");
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            engine.current.hoverStudent = i;
+          }}
+        >
           <mesh>
-            <capsuleGeometry args={[0.13, 0.5, 4, 8]} />
-            <meshStandardMaterial color="#94A3B8" transparent opacity={0.55} />
+            <capsuleGeometry args={[0.18, 0.62, 6, 10]} />
+            <meshStandardMaterial color="#94A3B8" transparent opacity={0.62} />
           </mesh>
-          <mesh position={[0, 0.58, 0]}>
-            <sphereGeometry args={[0.045, 10, 10]} />
-            <meshBasicMaterial color={colors[p.risk]} transparent opacity={0.7} />
+          <mesh position={[0, 0.72, 0]}>
+            <sphereGeometry args={[0.055, 12, 12]} />
+            <meshBasicMaterial color={colors[p.risk]} transparent opacity={0.85} />
           </mesh>
         </group>
       ))}
@@ -238,30 +253,40 @@ function Classroom({ engine }) {
 function PipelineNodes({ engine }) {
   const refs = useRef([]);
   useFrame((state) => {
-    const s = engine.current.scroll;
-    const vis = THREE.MathUtils.smoothstep(s, 0.32, 0.4) * (1 - THREE.MathUtils.smoothstep(s, 0.5, 0.58));
     refs.current.forEach((m, i) => {
       if (!m) return;
       const hot = engine.current.hotNode === i;
-      const pulse = 1 + Math.sin(state.clock.elapsedTime * 2.1 + i) * 0.035;
-      m.scale.setScalar((hot ? 1.38 : 1) * pulse * (0.35 + vis * 0.65));
-      m.material.emissiveIntensity = hot ? 1.05 : 0.32;
-      m.visible = vis > 0.04;
+      const pulse = 1 + Math.sin(state.clock.elapsedTime * 2.1 + i) * 0.04;
+      m.scale.setScalar((hot ? 1.45 : 1) * pulse);
+      m.material.emissiveIntensity = hot ? 1.15 : 0.38;
     });
   });
   return (
-    <group position={[0.05, 1.38, 0.15]}>
+    <group position={[0, 1.28, -18.2]}>
       {pipeline.map((n, i) => (
-        <mesh
-          key={n.id}
-          ref={(el) => {
-            refs.current[i] = el;
-          }}
-          position={[(i - 2) * 0.92, 0, 0]}
-        >
-          <octahedronGeometry args={[0.12, 0]} />
-          <meshStandardMaterial color="#2563EB" emissive="#1D4ED8" emissiveIntensity={0.28} roughness={0.25} />
-        </mesh>
+        <group key={n.id} position={[(i - 2) * 1.15, 0, 0]}>
+          <mesh
+            ref={(el) => {
+              refs.current[i] = el;
+            }}
+            onPointerOver={(e) => {
+              e.stopPropagation();
+              engine.current.hotNode = i;
+              setCursor(engine, "INSPECT");
+            }}
+            onPointerOut={() => {
+              engine.current.hotNode = -1;
+              setCursor(engine, "");
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              engine.current.hotNode = i;
+            }}
+          >
+            <octahedronGeometry args={[0.22, 0]} />
+            <meshStandardMaterial color="#2563EB" emissive="#1D4ED8" emissiveIntensity={0.32} roughness={0.22} />
+          </mesh>
+        </group>
       ))}
     </group>
   );
@@ -269,13 +294,13 @@ function PipelineNodes({ engine }) {
 
 function EngineLattice({ engine }) {
   const group = useRef();
-  const count = engine.current.mobile ? 28 : 48;
+  const count = engine.current.mobile ? 32 : 56;
   const pts = useMemo(() => {
     const a = [];
     for (let i = 0; i < count; i++) {
       const u = (i / count) * Math.PI * 2;
-      const v = (i % 6) / 6;
-      a.push([Math.cos(u) * (0.7 + v * 0.45), (v - 0.5) * 1.15, Math.sin(u) * (0.7 + v * 0.45)]);
+      const v = (i % 7) / 7;
+      a.push([Math.cos(u) * (0.85 + v * 0.55), (v - 0.5) * 1.35, Math.sin(u) * (0.85 + v * 0.55)]);
     }
     return a;
   }, [count]);
@@ -292,49 +317,20 @@ function EngineLattice({ engine }) {
 
   useFrame((state) => {
     if (!group.current) return;
-    const s = engine.current.scroll;
-    const vis = THREE.MathUtils.smoothstep(s, 0.48, 0.56) * (1 - THREE.MathUtils.smoothstep(s, 0.68, 0.76));
-    group.current.visible = vis > 0.04;
-    group.current.rotation.y = state.clock.elapsedTime * 0.12;
-    group.current.scale.setScalar(0.7 + vis * 0.5);
+    group.current.rotation.y = engine.current.reduce ? 0 : state.clock.elapsedTime * 0.14;
   });
 
   return (
-    <group ref={group} position={[-1.6, 1.25, 0]}>
+    <group ref={group} position={[0, 1.3, -27.2]} scale={1.25}>
       {pts.map((p, i) => (
         <mesh key={i} position={p}>
-          <sphereGeometry args={[0.028, 8, 8]} />
+          <sphereGeometry args={[0.032, 8, 8]} />
           <meshBasicMaterial color="#1D4ED8" />
         </mesh>
       ))}
       <lineSegments geometry={geom}>
-        <lineBasicMaterial color="#2563EB" transparent opacity={0.22} />
+        <lineBasicMaterial color="#2563EB" transparent opacity={0.28} />
       </lineSegments>
-    </group>
-  );
-}
-
-function AnalyticsBars({ engine }) {
-  const g = useRef();
-  const h = [0.9, 0.55, 0.72, 0.4, 0.63];
-  useFrame(() => {
-    if (!g.current) return;
-    const s = engine.current.scroll;
-    const vis = THREE.MathUtils.smoothstep(s, 0.62, 0.7) * (1 - THREE.MathUtils.smoothstep(s, 0.78, 0.84));
-    g.current.visible = vis > 0.04;
-    g.current.children.forEach((c, i) => {
-      c.scale.y = vis * h[i];
-      c.position.y = vis * h[i];
-    });
-  });
-  return (
-    <group ref={g} position={[2.1, 0.2, 0.4]}>
-      {h.map((_, i) => (
-        <mesh key={i} position={[(i - 2) * 0.28, 0, 0]}>
-          <boxGeometry args={[0.16, 2, 0.16]} />
-          <meshStandardMaterial color="#2563EB" emissive="#2563EB" emissiveIntensity={0.18} transparent opacity={0.75} />
-        </mesh>
-      ))}
     </group>
   );
 }
@@ -346,12 +342,12 @@ function Institution({ engine }) {
     () => [new THREE.Color(RISK.low), new THREE.Color(RISK.mid), new THREE.Color(RISK.high)],
     [],
   );
-  const count = engine.current.mobile ? 70 : 220;
+  const count = engine.current.mobile ? 90 : 240;
   const seeds = useMemo(() => {
     const s = [];
     for (let i = 0; i < count; i++) {
       const a = (i / count) * Math.PI * 2;
-      const r = 2.05 + (i % 9) * 0.48;
+      const r = 2.2 + (i % 9) * 0.52;
       s.push({
         x: Math.cos(a) * r,
         z: Math.sin(a) * r * 0.92,
@@ -365,9 +361,6 @@ function Institution({ engine }) {
 
   useFrame((state) => {
     if (!mesh.current) return;
-    const s = engine.current.scroll;
-    const vis = THREE.MathUtils.smoothstep(s, 0.74, 0.82) * (1 - THREE.MathUtils.smoothstep(s, 0.9, 0.97));
-    mesh.current.visible = vis > 0.03;
     if (!painted.current) {
       seeds.forEach((p, i) => mesh.current.setColorAt(i, pal[p.risk]));
       if (mesh.current.instanceColor) mesh.current.instanceColor.needsUpdate = true;
@@ -375,9 +368,9 @@ function Institution({ engine }) {
     }
     const hover = engine.current.instHover;
     seeds.forEach((p, i) => {
-      const hot = hover === i % 6;
-      dummy.position.set(p.x, p.y + (hot ? 0.18 : 0), p.z);
-      dummy.scale.setScalar(Math.max(0.001, vis) * (hot ? 1.9 : 1));
+      const hot = hover === i;
+      dummy.position.set(p.x, p.y + (hot ? 0.22 : 0), p.z);
+      dummy.scale.setScalar(hot ? 1.95 : 1);
       dummy.rotation.y = state.clock.elapsedTime * 0.04;
       dummy.updateMatrix();
       mesh.current.setMatrixAt(i, dummy.matrix);
@@ -386,19 +379,55 @@ function Institution({ engine }) {
   });
 
   return (
-    <instancedMesh ref={mesh} args={[undefined, undefined, count]}>
-      <sphereGeometry args={[0.055, 8, 8]} />
+    <instancedMesh
+      ref={mesh}
+      args={[undefined, undefined, count]}
+      position={[0, 0.2, -38]}
+      onPointerMove={(e) => {
+        e.stopPropagation();
+        engine.current.instHover = e.instanceId ?? -1;
+        setCursor(engine, "VIEW");
+      }}
+      onPointerOut={() => {
+        engine.current.instHover = -1;
+        setCursor(engine, "");
+      }}
+    >
+      <sphereGeometry args={[0.06, 8, 8]} />
       <meshStandardMaterial vertexColors roughness={0.35} emissive="#111" emissiveIntensity={0.2} />
     </instancedMesh>
+  );
+}
+
+function Portal({ engine }) {
+  const ring = useRef();
+  useFrame((state) => {
+    if (!ring.current || engine.current.reduce) return;
+    ring.current.rotation.z = state.clock.elapsedTime * 0.22;
+  });
+  return (
+    <group position={[0, 1.15, -48]}>
+      <mesh ref={ring} rotation={[0, 0, 0]}>
+        <torusGeometry args={[1.05, 0.028, 12, 80]} />
+        <meshBasicMaterial color="#2563EB" />
+      </mesh>
+      <mesh>
+        <torusGeometry args={[1.05, 0.01, 8, 80]} />
+        <meshBasicMaterial color="#93C5FD" transparent opacity={0.45} />
+      </mesh>
+    </group>
   );
 }
 
 function Ground() {
   const grid = useMemo(() => {
     const pos = [];
-    const n = 18;
-    for (let i = -n; i <= n; i++) {
-      pos.push(-n, 0, i, n, 0, i, i, 0, -n, i, 0, n);
+    const xSpan = 16;
+    for (let z = 6; z >= -56; z -= 1.2) {
+      pos.push(-xSpan, 0, z, xSpan, 0, z);
+    }
+    for (let x = -xSpan; x <= xSpan; x += 1.2) {
+      pos.push(x, 0, 6, x, 0, -56);
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
@@ -406,7 +435,7 @@ function Ground() {
   }, []);
   return (
     <lineSegments geometry={grid} position={[0, -0.01, 0]}>
-      <lineBasicMaterial color="#CBD5E1" transparent opacity={0.85} />
+      <lineBasicMaterial color="#CBD5E1" transparent opacity={0.7} />
     </lineSegments>
   );
 }
@@ -416,11 +445,12 @@ function Rig({ engine }) {
   const { camera } = useThree();
   useFrame(() => {
     const { p, l } = lerpCam(engine.current.scroll);
-    const mx = engine.current.mouse.x * 0.2;
-    const my = engine.current.mouse.y * 0.12;
-    camera.position.x = THREE.MathUtils.lerp(camera.position.x, p[0] + mx, 0.048);
-    camera.position.y = THREE.MathUtils.lerp(camera.position.y, p[1] + my, 0.048);
-    camera.position.z = THREE.MathUtils.lerp(camera.position.z, p[2], 0.048);
+    const mx = engine.current.mouse.x * 0.28;
+    const my = engine.current.mouse.y * 0.16;
+    const damp = engine.current.reduce ? 1 : 0.055;
+    camera.position.x = THREE.MathUtils.lerp(camera.position.x, p[0] + mx, damp);
+    camera.position.y = THREE.MathUtils.lerp(camera.position.y, p[1] + my, damp);
+    camera.position.z = THREE.MathUtils.lerp(camera.position.z, p[2], damp);
     look.set(l[0], l[1], l[2]);
     camera.lookAt(look);
   });
@@ -431,34 +461,36 @@ function MouseLight({ engine }) {
   const ref = useRef();
   useFrame(() => {
     if (!ref.current) return;
-    ref.current.position.x = 1.2 + engine.current.mouse.x * 2.8;
-    ref.current.position.y = 2.15 + engine.current.mouse.y * 1.1;
+    ref.current.position.x = engine.current.mouse.x * 3.2;
+    ref.current.position.y = 2.2 + engine.current.mouse.y * 1.1;
+    ref.current.position.z = THREE.MathUtils.lerp(3.2, -46, engine.current.scroll);
     const risk = engine.current.risk / 100;
     const sim = engine.current.sim;
-    ref.current.intensity = THREE.MathUtils.lerp(0.55 - risk * 0.22, 0.85, sim);
+    ref.current.intensity = THREE.MathUtils.lerp(0.7 - risk * 0.22, 1.05, sim);
   });
-  return <pointLight ref={ref} color="#2563EB" intensity={0.42} distance={11} />;
+  return <pointLight ref={ref} color="#2563EB" intensity={0.7} distance={14} />;
 }
 
 export default function World({ engine }) {
   return (
     <>
       <color attach="background" args={["#F8FAFC"]} />
-      <fog attach="fog" args={["#F8FAFC", 8, 26]} />
+      <fog attach="fog" args={["#F8FAFC", 10, 32]} />
       <ambientLight intensity={0.58} />
       <hemisphereLight args={["#EFF6FF", "#E2E8F0", 0.55]} />
-      <directionalLight position={[5, 8, 3]} intensity={1.05} color="#ffffff" />
-      <directionalLight position={[-6, 2, -4]} intensity={0.2} color="#2563EB" />
+      <directionalLight position={[5, 8, 3]} intensity={1.1} color="#ffffff" />
+      <directionalLight position={[-6, 2, -4]} intensity={0.22} color="#2563EB" />
       <MouseLight engine={engine} />
       <Rig engine={engine} />
       <Ground />
+      <ContactShadows position={[0, 0, 0]} opacity={0.22} scale={28} blur={2.4} far={10} />
       <Dust engine={engine} />
       <Student engine={engine} />
       <Classroom engine={engine} />
       <PipelineNodes engine={engine} />
       <EngineLattice engine={engine} />
-      <AnalyticsBars engine={engine} />
       <Institution engine={engine} />
+      <Portal engine={engine} />
     </>
   );
 }

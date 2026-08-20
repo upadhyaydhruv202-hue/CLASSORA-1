@@ -4,6 +4,9 @@ import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  resolve: {
+    dedupe: ["react", "react-dom", "three"],
+  },
   server: {
     port: 5173,
     strictPort: false,
@@ -16,6 +19,6 @@ export default defineConfig({
     },
   },
   build: {
-    chunkSizeWarningLimit: 900,
+    chunkSizeWarningLimit: 1000,
   },
 });

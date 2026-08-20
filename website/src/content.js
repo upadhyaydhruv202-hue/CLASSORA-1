@@ -73,11 +73,11 @@ export const techNodes = [
   { id: "act", label: "Intervention", tech: "Human-in-the-loop", purpose: "Cases exist only after authorised review." },
 ];
 
-export const impactMetrics = [
-  { key: "Students Monitored", value: 12480 },
-  { key: "High-Risk Students", value: 1284 },
-  { key: "Interventions Triggered", value: 843 },
-  { key: "Students Supported", value: 726 },
+export const impactCapabilities = [
+  { key: "Attendance", body: "Teachers capture class photos or a short recording and match them to the enrolled roster." },
+  { key: "Risk score", body: "A deterministic, inspectable support signal — not a diagnosis and not a black box." },
+  { key: "Intervention", body: "Cases, mentorship, and complaints exist only after a human reviews them." },
+  { key: "Roles", body: "Student FaceID, teacher register, and counsellor or admin Success Hub in one app." },
 ];
 
 export const team = [

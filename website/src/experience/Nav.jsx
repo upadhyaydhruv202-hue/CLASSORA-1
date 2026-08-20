@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { APP_URL, cineNav } from "../content";
 
 export default function Nav() {
   const [on, setOn] = useState(false);
   const [open, setOpen] = useState(false);
   const [reduce, setReduce] = useState(false);
+  const menuBtn = useRef(null);
+  const panel = useRef(null);
 
   useEffect(() => {
     const fn = () => setOn(window.scrollY > 24);
@@ -14,6 +16,28 @@ export default function Nav() {
     setReduce(motion.matches);
     return () => window.removeEventListener("scroll", fn);
   }, []);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (event) => {
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      menuBtn.current?.focus();
+    };
+    const onPointer = (event) => {
+      const target = event.target;
+      if (panel.current?.contains(target) || menuBtn.current?.contains(target)) return;
+      setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("pointerdown", onPointer);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", onPointer);
+    };
+  }, [open]);
+
+  const closeMenu = () => setOpen(false);
 
   const toggleMotion = () => {
     const next = !reduce;
@@ -27,9 +51,7 @@ export default function Nav() {
       <div className="cine-nav-inner">
         <a href="#experience" className="justify-self-start no-underline">
           <span className="block text-[13px] font-extrabold tracking-[0.22em] text-[#0F172A]">CLASSORA</span>
-          <span className="mt-0.5 block font-mono text-[9px] tracking-[0.18em] text-[#64748B]">
-            Learn. Connect. Evolve.
-          </span>
+          <span className="mt-0.5 block font-mono text-[9px] tracking-[0.18em] text-[#64748B]">Learn. Connect. Evolve.</span>
         </a>
         <nav className="hidden items-center justify-center gap-1 lg:flex" aria-label="Primary">
           {cineNav.map((n) => (
@@ -56,24 +78,21 @@ export default function Nav() {
           </a>
         </div>
         <button
+          ref={menuBtn}
           type="button"
           className="justify-self-end rounded-full border border-[#E2E8F0] bg-white px-3 py-1.5 text-[12px] text-[#0F172A] lg:hidden"
           onClick={() => setOpen((v) => !v)}
-          aria-label="Menu"
+          aria-label={open ? "Close menu" : "Open menu"}
           aria-expanded={open}
+          aria-controls="cine-mobile-menu"
         >
           Menu
         </button>
       </div>
       {open && (
-        <div className="cine-panel mx-4 mt-2 rounded-2xl p-4 lg:hidden">
+        <div ref={panel} id="cine-mobile-menu" className="cine-panel mx-4 mt-2 rounded-2xl p-4 lg:hidden">
           {cineNav.map((n) => (
-            <a
-              key={n.id}
-              href={`#${n.id}`}
-              onClick={() => setOpen(false)}
-              className="block py-2 text-sm text-[#0F172A] no-underline"
-            >
+            <a key={n.id} href={`#${n.id}`} onClick={closeMenu} className="block py-2 text-sm text-[#0F172A] no-underline">
               {n.label}
             </a>
           ))}

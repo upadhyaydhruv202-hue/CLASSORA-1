@@ -5,7 +5,7 @@ export default function SceneMount({ engine, dpr }) {
   return (
     <Canvas
       dpr={dpr}
-      camera={{ position: [0.15, 1.42, 5.8], fov: 36, near: 0.1, far: 80 }}
+      camera={{ position: [0.08, 1.52, 3.7], fov: 42, near: 0.1, far: 90 }}
       gl={{
         alpha: false,
         antialias: !engine.current.mobile,

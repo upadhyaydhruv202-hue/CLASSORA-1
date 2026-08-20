@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 
 export default function Loading({ onDone }) {
   const [pct, setPct] = useState(0);
-  const [phase, setPhase] = useState("INITIALIZING AI SYSTEM");
+  const [phase, setPhase] = useState("Loading CLASSORA");
   const done = useRef(false);
   const canvas = useRef(null);
 
@@ -41,9 +41,9 @@ export default function Loading({ onDone }) {
       const p = Math.min((now - t0) / 700, 1);
       const n = Math.round(p * 100);
       setPct(n);
-      if (p < 0.34) setPhase("INITIALIZING AI SYSTEM");
-      else if (p < 0.86) setPhase(`LOADING ${n}%`);
-      else setPhase("SYSTEM READY");
+      if (p < 0.34) setPhase("Loading CLASSORA");
+      else if (p < 0.86) setPhase(`Loading ${n}%`);
+      else setPhase("Ready");
 
       if (ctx && cvs) {
         ctx.clearRect(0, 0, cvs.width, cvs.height);
