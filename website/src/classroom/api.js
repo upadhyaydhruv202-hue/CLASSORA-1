@@ -1,7 +1,7 @@
 const TOKEN_KEY = "classora_token";
 const API_BASE = String(import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
 
-async function request(path, { method = "GET", body, form, auth = true } = {}) {
+async function request(path, { method = "GET", body, form, auth = true, timeoutMs = 25000 } = {}) {
   const headers = {};
   if (auth) {
     const token = localStorage.getItem(TOKEN_KEY);
@@ -14,7 +14,19 @@ async function request(path, { method = "GET", body, form, auth = true } = {}) {
     headers["Content-Type"] = "application/json";
     payload = JSON.stringify(body);
   }
-  const res = await fetch(`${API_BASE}${path}`, { method, headers, body: payload });
+  const controller = timeoutMs ? new AbortController() : null;
+  const timer = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  let res;
+  try {
+    res = await fetch(`${API_BASE}${path}`, { method, headers, body: payload, signal: controller?.signal });
+  } catch (err) {
+    if (err?.name === "AbortError") {
+      throw new Error("That request took too long. The voice model may still be starting — wait 15 seconds and try once more.");
+    }
+    throw err;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new Error(data.detail || data.message || `Request failed (${res.status})`);
@@ -69,7 +81,7 @@ export const api = {
     const form = new FormData();
     form.append("subject_id", subjectId);
     form.append("audio", file);
-    return request("/api/teacher/attendance/voice", { method: "POST", form });
+    return request("/api/teacher/attendance/voice", { method: "POST", form, timeoutMs: 20000 });
   },
   confirmAttendance: (body) => request("/api/teacher/attendance/confirm", { method: "POST", body }),
   studentDirectory: () => request("/api/student/directory", { auth: false }),

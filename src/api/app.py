@@ -37,6 +37,12 @@ async def lifespan(_app):
         load_dlib_models()
     except Exception:
         pass
+    try:
+        from src.pipelines.voice_pipeline import warmup_voice_encoder
+
+        warmup_voice_encoder()
+    except Exception:
+        pass
     yield
 
 
@@ -396,7 +402,7 @@ async def teacher_voice_attendance(
 ):
     roster = _subject_roster(session, subject_id)
     try:
-        from src.pipelines.voice_pipeline import as_voice_vector, process_bulk_audio
+        from src.pipelines.voice_pipeline import as_voice_vector, process_bulk_audio, VoiceWarmingError
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Voice models are not available: {exc}") from exc
     candidates = {}
@@ -411,6 +417,8 @@ async def teacher_voice_attendance(
         )
     try:
         identified = process_bulk_audio(await audio.read(), candidates) or {}
+    except VoiceWarmingError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Voice attendance failed: {exc}") from exc
     present_ids = [int(sid) for sid in identified]

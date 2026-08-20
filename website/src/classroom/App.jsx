@@ -475,7 +475,8 @@ function TeacherDesk({ session, health, setError, onLogout }) {
   const [photos, setPhotos] = useState([]);
   const [audio, setAudio] = useState(null);
   const [preview, setPreview] = useState(null);
-  const [busy, setBusy] = useState(false);
+  const [busyFace, setBusyFace] = useState(false);
+  const [busyVoice, setBusyVoice] = useState(false);
 
   const reload = async () => {
     try {
@@ -502,28 +503,28 @@ function TeacherDesk({ session, health, setError, onLogout }) {
   const runFace = async () => {
     if (!subjectId) return setError("Choose a subject first.");
     if (!photos.length) return setError("Capture at least one classroom photo.");
-    setBusy(true);
+    setBusyFace(true);
     setError("");
     try {
       setPreview(await api.faceAttendance(subjectId, photos));
     } catch (err) {
       setError(err.message);
     } finally {
-      setBusy(false);
+      setBusyFace(false);
     }
   };
 
   const runVoice = async () => {
     if (!subjectId) return setError("Choose a subject first.");
     if (!audio) return setError("Record classroom audio first.");
-    setBusy(true);
+    setBusyVoice(true);
     setError("");
     try {
       setPreview(await api.voiceAttendance(subjectId, audio));
     } catch (err) {
       setError(err.message);
     } finally {
-      setBusy(false);
+      setBusyVoice(false);
     }
   };
 
@@ -625,8 +626,8 @@ function TeacherDesk({ session, health, setError, onLogout }) {
                   onFiles={setPhotos}
                 />
               </div>
-              <button type="button" disabled={busy} onClick={runFace} className="co-btn mt-4">
-                {busy ? "AI is scanning…" : "Run Face Analysis"}
+              <button type="button" disabled={busyFace} onClick={runFace} className="co-btn mt-4">
+                {busyFace ? "AI is scanning…" : "Run Face Analysis"}
               </button>
             </div>
             <div className="rounded-3xl border border-[#E2E8F0] p-4">
@@ -641,8 +642,8 @@ function TeacherDesk({ session, health, setError, onLogout }) {
                   hint="Walk the mic around the room. Stop when everyone has spoken."
                 />
               </div>
-              <button type="button" disabled={busy} onClick={runVoice} className="co-btn co-btn-secondary mt-4">
-                {busy ? "Processing audio…" : "Use Voice Attendance"}
+              <button type="button" disabled={busyVoice} onClick={runVoice} className="co-btn co-btn-secondary mt-4">
+                {busyVoice ? "Processing audio…" : "Use Voice Attendance"}
               </button>
             </div>
           </div>
@@ -654,6 +655,17 @@ function TeacherDesk({ session, health, setError, onLogout }) {
               <p className="mt-1 text-sm text-[#334155]">
                 <strong>Absent:</strong> {names(preview.absent_ids) || "none"}
               </p>
+              {Number(preview.unknown_faces) > 0 && (
+                <p className="mt-2 text-sm text-amber-800">
+                  {preview.unknown_faces} face{Number(preview.unknown_faces) === 1 ? "" : "s"} in the photo {Number(preview.unknown_faces) === 1 ? "is" : "are"} not on this subject’s roster.
+                  Enroll that student with the subject join code, then run analysis again. Attendance only marks enrolled names present or absent.
+                </p>
+              )}
+              {!(preview.present_ids || []).length && !Number(preview.unknown_faces) && (
+                <p className="mt-2 text-sm text-amber-800">
+                  No enrolled face matched. Confirm the student registered FaceID and is enrolled in this subject.
+                </p>
+              )}
               <button
                 type="button"
                 className="co-btn mt-3"
