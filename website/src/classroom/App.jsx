@@ -22,6 +22,94 @@ function joinCodeFromUrl() {
   return new URLSearchParams(window.location.search).get("join-code") || "";
 }
 
+const STUDENT_MODULES = [
+  "Student snapshot",
+  "My Digital Twin",
+  "My Risk",
+  "AI Explanation",
+  "Recovery AI",
+  "Future trajectory",
+  "Interventions",
+  "Notifications",
+  "Ask for support",
+  "Anonymous Mentorship",
+  "Account",
+];
+
+function studentWorkspaceShell(session, riskPayload) {
+  const student = session?.student_data || {};
+  if (student.student_id == null) return null;
+  const risk = riskPayload?.risk || {};
+  const score = risk.riskScore ?? 0;
+  const category = risk.modelCategory || "Stable";
+  const pred = {
+    score,
+    category,
+    widgetLevel: risk.riskLevel || "LOW",
+    confidence: risk.confidence,
+    drivers: risk.drivers || [],
+    missing: risk.missing || [],
+    disclaimer: risk.disclaimer || "Predicted risk is a support signal, not a diagnosis.",
+    model_version: risk.modelVersion,
+  };
+  const profile = {
+    student_id: student.student_id,
+    name: student.name,
+    courses: [],
+    attendance: {},
+    academic: {},
+    engagement: {},
+    prediction: pred,
+    recommendations: risk.recommendations || [],
+  };
+  const twin = {
+    studentId: student.student_id,
+    displayName: student.name,
+    disclaimer: pred.disclaimer,
+    overview: {
+      riskScore: score,
+      category,
+      widgetLevel: pred.widgetLevel,
+      confidence: pred.confidence,
+      status: category,
+      temporal: {},
+    },
+    academic: {},
+    attendance: {},
+    engagement: {},
+    risk: { score, category, drivers: pred.drivers, missing: pred.missing, why: {} },
+    intervention: {},
+    mentorship: { status: "NONE", active: false },
+    recovery: { actions: risk.recommendations || [] },
+    trajectory: {},
+    timeline: [],
+  };
+  return {
+    role: "student",
+    modules: STUDENT_MODULES,
+    profiles: [profile],
+    twins: { [String(student.student_id)]: twin },
+    mine: profile,
+    risk,
+    cases: [],
+    recommendations: [],
+    academic: [],
+    lms: [],
+    alerts: [],
+    library: [],
+    notifications: [],
+    appointments: [],
+    tasks: [],
+    messages: [],
+    mentorship: [],
+    complaints: [],
+    appeals: [],
+    account: riskPayload?.snapshot || null,
+    moderation_meta: { categories: [], severities: [], actions: [], execute_actions: [] },
+    disclaimer: pred.disclaimer,
+  };
+}
+
 const portals = [
   {
     id: "student",
@@ -608,6 +696,7 @@ function StudentDesk({ session, setError, onLogout }) {
   const [joined, setJoined] = useState("");
   const [risk, setRisk] = useState(null);
   const [workspace, setWorkspace] = useState(null);
+  const shell = useMemo(() => studentWorkspaceShell(session, risk), [session, risk]);
 
   const reload = async () => {
     try {
@@ -729,7 +818,7 @@ function StudentDesk({ session, setError, onLogout }) {
           session={session}
           setError={setError}
           defaultModule={tab === "mentorship" ? "Anonymous Mentorship" : tab === "account" ? "Account" : "My Digital Twin"}
-          cached={workspace}
+          cached={workspace || shell}
           onCached={setWorkspace}
         />
       )}

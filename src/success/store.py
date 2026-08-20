@@ -82,14 +82,17 @@ def insert(table: str, row: dict):
 
 def select(table: str, **eq):
     if is_supabase_configured():
-        if not available(table):
+        if table in _AVAIL and not _AVAIL[table]:
             return []
         try:
             q = supabase.table(table).select("*")
             for k, v in eq.items():
                 q = q.eq(k, v)
-            return q.execute().data or []
+            rows = q.execute().data or []
+            _AVAIL[table] = True
+            return rows
         except Exception:
+            _AVAIL[table] = False
             return []
     if table in _CLOUD_ONLY:
         return []

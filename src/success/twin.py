@@ -112,7 +112,7 @@ def _timeline(profile, mentorship, interventions, logs):
     return events[-12:]
 
 
-def build_twin(profile, *, logs=None, role="staff"):
+def build_twin(profile, *, logs=None, role="staff", lite=False):
     """Assemble a Digital Twin. ``role`` filters identity and admin-only fields."""
     if not profile:
         return None
@@ -121,9 +121,23 @@ def build_twin(profile, *, logs=None, role="staff"):
     aca = profile.get("academic") or {}
     eng = profile.get("engagement") or {}
     pred = profile.get("prediction") or {}
-    mentorship = _mentorship_state(sid)
+    if lite:
+        mentorship = {"active": False, "status": None, "identityReveal": False, "anonymousMentorId": None}
+        interventions = {
+            "cases": [],
+            "recommendations": [],
+            "plans": [],
+            "tasks": [],
+            "open_cases": 0,
+            "pending_recs": 0,
+            "tasks_done": 0,
+            "tasks_total": 0,
+            "outcomes": [],
+        }
+    else:
+        mentorship = _mentorship_state(sid)
+        interventions = _own_interventions(sid)
     support = {"mentorship_active": bool(mentorship.get("active"))}
-    interventions = _own_interventions(sid)
     temporal = temporal_features(att)
     recovery = recovery_scenarios(att, aca, eng, support=support)
     trajectory = project_trajectory(att, aca, eng, support=support)

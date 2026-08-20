@@ -1,6 +1,7 @@
 """Assemble Student Success intelligence from existing attendance APIs + optional new tables."""
 
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 from src.database.config import is_supabase_configured, supabase
@@ -86,25 +87,37 @@ def _real_bundle(teacher_id=None, student_id=None):
 
     if student_id is not None:
         student_id = int(student_id)
-        try:
-            students = supabase.table("students").select("student_id, name").eq("student_id", student_id).execute().data or []
-        except Exception:
-            students = []
-        try:
-            enrollments = supabase.table("subject_students").select(
-                "student_id, subject_id, subjects(name, section, subject_code, teacher_id)"
-            ).eq("student_id", student_id).execute().data or []
-        except Exception:
-            enrollments = []
-        logs = get_student_attendance(student_id) or []
+
+        def _students():
+            try:
+                return supabase.table("students").select("student_id, name").eq("student_id", student_id).execute().data or []
+            except Exception:
+                return []
+
+        def _enrollments():
+            try:
+                return supabase.table("subject_students").select(
+                    "student_id, subject_id, subjects(name, section, subject_code, teacher_id)"
+                ).eq("student_id", student_id).execute().data or []
+            except Exception:
+                return []
+
+        def _logs():
+            return get_student_attendance(student_id) or []
+
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            students = pool.submit(_students)
+            enrollments = pool.submit(_enrollments)
+            logs = pool.submit(_logs)
+            students, enrollments, logs = students.result(), enrollments.result(), logs.result()
         return {
             "students": students,
             "enrollments": enrollments,
             "logs": logs,
-            "academic": store.select("academic_records", student_id=student_id),
-            "lms": store.select("lms_events", student_id=student_id),
-            "cases": store.select("intervention_cases", student_id=student_id),
-            "recommendations": store.select("intervention_recommendations", student_id=student_id),
+            "academic": [],
+            "lms": [],
+            "cases": [],
+            "recommendations": [],
             "demo": False,
         }
 
@@ -172,7 +185,9 @@ def profile_map(bundle):
         aca_by[r.get("student_id")].append(r)
     for r in bundle.get("lms") or []:
         lms_by[r.get("student_id")].append(r)
-    mentored = _open_mentored_ids() if not bundle.get("demo") else set()
+    mentored = set()
+    if not bundle.get("demo") and len(bundle.get("students") or []) > 1:
+        mentored = _open_mentored_ids()
     overdue = set()
     now = datetime.now()
     for c in bundle.get("cases") or []:

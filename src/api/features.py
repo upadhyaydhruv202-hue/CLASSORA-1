@@ -261,6 +261,51 @@ def success_workspace(session: dict = Depends(require_session)):
     teacher_id = (session.get("teacher_data") or {}).get("teacher_id")
     student_id = (session.get("student_data") or {}).get("student_id")
     staff = session.get("staff_data") or {}
+    if role == "student" and student_id is not None:
+        bundle = load_bundle(session, student_id=student_id)
+        profiles = profile_map(bundle)
+        mine = profiles[0] if profiles else None
+        twins = {}
+        if mine:
+            twins[str(mine["student_id"])] = build_twin(
+                mine,
+                logs=logs_by_student(bundle).get(mine["student_id"]),
+                role="student",
+                lite=True,
+            )
+        return clean({
+            "role": role,
+            "actor": _actor(session),
+            "demo": False,
+            "modules": _modules(role),
+            "profiles": profiles,
+            "twins": twins,
+            "mine": mine,
+            "risk": None,
+            "cases": [],
+            "recommendations": (mine or {}).get("recommendations") or [],
+            "academic": [],
+            "lms": [],
+            "alerts": _alerts(profiles),
+            "library": library(),
+            "notifications": [],
+            "appointments": [],
+            "tasks": [],
+            "messages": [],
+            "institution": None,
+            "mentorship": [],
+            "mentorship_admin": None,
+            "complaints": [],
+            "appeals": [],
+            "account": None,
+            "moderation_meta": {
+                "categories": list(mod_policy.CATEGORIES),
+                "severities": list(mod_policy.SEVERITIES),
+                "actions": list(mod_policy.REQUESTED_ACTIONS.values()) if isinstance(mod_policy.REQUESTED_ACTIONS, dict) else list(mod_policy.REQUESTED_ACTIONS),
+                "execute_actions": list(mod_policy.EXECUTE_ACTIONS),
+            },
+            "disclaimer": "Predicted risk is a support signal, not a diagnosis.",
+        })
     bundle = load_bundle(
         session,
         teacher_id=teacher_id if role != "student" else None,
