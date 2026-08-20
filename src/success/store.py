@@ -13,6 +13,7 @@ from src.database.config import is_supabase_configured, supabase
 _LOCK = threading.Lock()
 _PATH = Path(__file__).resolve().parents[2] / "data" / "success_store.json"
 _CLOUD_ONLY = {"mentorships", "complaints", "student_moderation_status", "mentorship_messages", "appeals"}
+_AVAIL = {}
 
 
 def _now():
@@ -40,11 +41,14 @@ def _dump(data):
 def available(table: str) -> bool:
     if not is_supabase_configured():
         return table not in _CLOUD_ONLY
+    if table in _AVAIL:
+        return _AVAIL[table]
     try:
         supabase.table(table).select("*").limit(1).execute()
-        return True
+        _AVAIL[table] = True
     except Exception:
-        return False
+        _AVAIL[table] = False
+    return _AVAIL[table]
 
 
 def insert(table: str, row: dict):

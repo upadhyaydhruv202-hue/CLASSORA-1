@@ -74,15 +74,18 @@ export default function SuccessWorkspace({ session, setError, defaultModule }) {
   const [module, setModule] = useState(defaultModule || "");
   const [pick, setPick] = useState("");
   const [busy, setBusy] = useState(false);
+  const [stalled, setStalled] = useState("");
 
   const load = async () => {
     try {
+      setStalled("");
       const ws = await api.workspace();
       setData(ws);
       setModule((m) => m || ws.modules?.[0] || "");
       if (!pick && ws.profiles?.[0]) setPick(String(ws.profiles[0].student_id));
     } catch (err) {
       setError(err.message);
+      setStalled(err.message || "Could not load Success Hub modules.");
     }
   };
 
@@ -116,7 +119,13 @@ export default function SuccessWorkspace({ session, setError, defaultModule }) {
     }
   };
 
-  if (!data) return <p className="text-sm text-[#64748B]">Loading CLASSORA modules…</p>;
+  if (!data) {
+    return (
+      <p className="text-sm text-[#64748B]">
+        {stalled ? `Could not load modules: ${stalled}` : "Loading CLASSORA modules…"}
+      </p>
+    );
+  }
 
   const showPicker = session.user_role !== "student" && (data.profiles || []).length > 0;
 

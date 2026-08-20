@@ -261,10 +261,15 @@ def success_workspace(session: dict = Depends(require_session)):
     teacher_id = (session.get("teacher_data") or {}).get("teacher_id")
     student_id = (session.get("student_data") or {}).get("student_id")
     staff = session.get("staff_data") or {}
-    bundle = load_bundle(session, teacher_id=teacher_id)
+    bundle = load_bundle(
+        session,
+        teacher_id=teacher_id if role != "student" else None,
+        student_id=student_id if role == "student" else None,
+    )
     profiles = profile_map(bundle)
     twins = {}
-    for profile in profiles[:20]:
+    twin_rows = profiles[:1] if role == "student" else profiles[:20]
+    for profile in twin_rows:
         twins[str(profile["student_id"])] = build_twin(profile, logs=logs_by_student(bundle).get(profile["student_id"]), role="student" if role == "student" else "staff")
     mine = None
     risk = None

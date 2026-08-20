@@ -22,11 +22,21 @@ def audit(actor, action, entity="", detail=""):
     store.insert("audit_events", {"actor": actor, "action": action, "entity": entity, "detail": detail})
 
 
-def _real_bundle(teacher_id=None):
+def _public_student_fields(row):
+    if not row:
+        return None
+    return {"student_id": row.get("student_id"), "name": row.get("name")}
+
+
+def _real_bundle(teacher_id=None, student_id=None):
+    extra = {}
+    if student_id is not None:
+        extra["student_id"] = int(student_id)
+
     if not is_supabase_configured():
         from src.database import local_store as local
         data = local.read_db()
-        students = [local.public_student(row) for row in data.get("students") or []]
+        students = [_public_student_fields(row) for row in data.get("students") or []]
         subjects = {int(s["subject_id"]): s for s in data.get("subjects") or []}
         enrollments = []
         for row in data.get("subject_students") or []:
@@ -52,7 +62,12 @@ def _real_bundle(teacher_id=None):
                 "teacher_id": sub.get("teacher_id"),
             }
             logs.append(item)
-        if teacher_id is not None:
+        if student_id is not None:
+            student_id = int(student_id)
+            students = [s for s in students if int(s.get("student_id") or 0) == student_id]
+            enrollments = [e for e in enrollments if int(e.get("student_id") or 0) == student_id]
+            logs = [r for r in logs if int(r.get("student_id") or 0) == student_id]
+        elif teacher_id is not None:
             teacher_id = int(teacher_id)
             allowed = {e["student_id"] for e in enrollments if (e.get("subjects") or {}).get("teacher_id") == teacher_id}
             students = [s for s in students if s.get("student_id") in allowed]
@@ -62,53 +77,72 @@ def _real_bundle(teacher_id=None):
             "students": students,
             "enrollments": enrollments,
             "logs": logs,
-            "academic": store.select("academic_records"),
-            "lms": store.select("lms_events"),
-            "cases": store.select("intervention_cases"),
-            "recommendations": store.select("intervention_recommendations"),
+            "academic": store.select("academic_records", **extra),
+            "lms": store.select("lms_events", **extra),
+            "cases": store.select("intervention_cases", **extra),
+            "recommendations": store.select("intervention_recommendations", **extra),
             "demo": False,
         }
 
-    students = get_all_students() or []
-    enrollments = []
-    logs = []
-    if is_supabase_configured():
+    if student_id is not None:
+        student_id = int(student_id)
+        try:
+            students = supabase.table("students").select("student_id, name").eq("student_id", student_id).execute().data or []
+        except Exception:
+            students = []
         try:
             enrollments = supabase.table("subject_students").select(
                 "student_id, subject_id, subjects(name, section, subject_code, teacher_id)"
-            ).execute().data or []
+            ).eq("student_id", student_id).execute().data or []
         except Exception:
             enrollments = []
-        try:
-            q = supabase.table("attendance_logs").select("*, subjects(name, section, subject_code, teacher_id)")
-            if teacher_id:
-                q = q.eq("subjects.teacher_id", teacher_id)
-            logs = q.execute().data or []
-        except Exception:
-            logs = []
+        logs = get_student_attendance(student_id) or []
+        return {
+            "students": students,
+            "enrollments": enrollments,
+            "logs": logs,
+            "academic": store.select("academic_records", student_id=student_id),
+            "lms": store.select("lms_events", student_id=student_id),
+            "cases": store.select("intervention_cases", student_id=student_id),
+            "recommendations": store.select("intervention_recommendations", student_id=student_id),
+            "demo": False,
+        }
+
+    students = get_all_students("student_id, name") or []
+    enrollments = []
+    logs = []
+    try:
+        enrollments = supabase.table("subject_students").select(
+            "student_id, subject_id, subjects(name, section, subject_code, teacher_id)"
+        ).execute().data or []
+    except Exception:
+        enrollments = []
+    try:
+        q = supabase.table("attendance_logs").select("*, subjects(name, section, subject_code, teacher_id)")
+        if teacher_id:
+            q = q.eq("subjects.teacher_id", teacher_id)
+        logs = q.execute().data or []
+    except Exception:
+        logs = []
     if teacher_id:
         allowed = {e["student_id"] for e in enrollments if (e.get("subjects") or {}).get("teacher_id") == teacher_id}
         students = [s for s in students if s.get("student_id") in allowed]
         enrollments = [e for e in enrollments if (e.get("subjects") or {}).get("teacher_id") == teacher_id]
         logs = [r for r in logs if (r.get("subjects") or {}).get("teacher_id") == teacher_id]
-    academic = store.select("academic_records")
-    lms = store.select("lms_events")
-    cases = store.select("intervention_cases")
-    recs = store.select("intervention_recommendations")
     return {
         "students": students,
         "enrollments": enrollments,
         "logs": logs,
-        "academic": academic,
-        "lms": lms,
-        "cases": cases,
-        "recommendations": recs,
+        "academic": store.select("academic_records"),
+        "lms": store.select("lms_events"),
+        "cases": store.select("intervention_cases"),
+        "recommendations": store.select("intervention_recommendations"),
         "demo": False,
     }
 
 
-def load_bundle(session_state, teacher_id=None):
-    return _real_bundle(teacher_id)
+def load_bundle(session_state, teacher_id=None, student_id=None):
+    return _real_bundle(teacher_id, student_id)
 
 
 def _open_mentored_ids():
