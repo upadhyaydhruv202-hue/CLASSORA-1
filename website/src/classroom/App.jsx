@@ -348,7 +348,7 @@ function StudentAuth({ health, busy, setBusy, setError, signIn, onBack }) {
       <form onSubmit={mode === "login" ? loginFace : register}>
         {mode === "register" && <Field label="Your name" value={name} onChange={(e) => setName(e.target.value)} placeholder="E.g. Hamza Rizvi" />}
         <div className="co-media mb-4">
-          <CameraCapture onCapture={setFace} captureLabel="Capture face" />
+          <CameraCapture onCapture={setFace} captureLabel="Capture face" maxSide={720} />
         </div>
         {mode === "register" && (
           <div className="co-media mb-4">

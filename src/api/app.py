@@ -7,7 +7,7 @@ from typing import Optional
 
 from contextlib import asynccontextmanager
 
-from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from PIL import Image
@@ -32,10 +32,9 @@ from src.api.features import router as features_router
 @asynccontextmanager
 async def lifespan(_app):
     try:
-        from src.pipelines.face_pipeline import get_trained_model, load_dlib_models
+        from src.pipelines.face_pipeline import load_dlib_models
 
         load_dlib_models()
-        get_trained_model()
     except Exception:
         pass
     yield
@@ -125,7 +124,15 @@ def health():
         "librosa": _module_ok("librosa"),
         "resemblyzer": _module_ok("resemblyzer"),
     }
-    face_ready = all(models[key] for key in ("numpy", "dlib", "face_recognition_models", "sklearn"))
+    face_loaded = False
+    try:
+        from src.pipelines.face_pipeline import load_dlib_models
+
+        load_dlib_models()
+        face_loaded = True
+    except Exception:
+        face_loaded = False
+    face_ready = face_loaded and all(models[key] for key in ("numpy", "dlib", "face_recognition_models"))
     voice_ready = all(models[key] for key in ("numpy", "librosa", "resemblyzer"))
     return {
         "ok": True,
@@ -135,6 +142,7 @@ def health():
         "mode": "supabase" if _cloud() else "local-demo",
         "face_models_ready": face_ready,
         "voice_models_ready": voice_ready,
+        "face_weights_loaded": face_loaded,
         "models": models,
     }
 
@@ -203,43 +211,43 @@ def staff_register(body: StaffAuthIn):
     return _token_body(session_payload(role=body.role, staff=staff))
 
 
-def _attach_voice_later(student_id, audio_bytes, use_cloud):
-    try:
-        from src.pipelines.voice_pipeline import get_voice_embedding
+def _attach_voice(student_id, audio_bytes, use_cloud):
+    from src.pipelines.voice_pipeline import get_voice_embedding
 
-        embedding = get_voice_embedding(audio_bytes)
-        if not embedding:
-            return
-        if use_cloud:
-            cloud.update_student_voice(student_id, embedding)
-        else:
-            local.update_student_voice(student_id, embedding)
-    except Exception:
-        return
+    embedding = get_voice_embedding(audio_bytes)
+    if not embedding:
+        raise RuntimeError("Could not build a voice embedding from that clip.")
+    if use_cloud:
+        cloud.update_student_voice(student_id, embedding)
+    else:
+        local.update_student_voice(student_id, embedding)
+    return embedding
 
 
 @app.post("/api/auth/student/register")
 async def student_register(
-    background_tasks: BackgroundTasks,
     name: str = Form(...),
     face: UploadFile | None = File(None),
     voice: UploadFile | None = File(None),
 ):
     face_emb = None
-    voice_bytes = None
-    if face:
-        try:
-            from src.pipelines.face_pipeline import get_face_embeddings, invalidate_classifier
+    voice_bytes = await voice.read() if voice else None
+    if not face:
+        raise HTTPException(status_code=400, detail="Capture your face to register.")
+    try:
+        from src.pipelines.face_pipeline import get_face_embeddings, invalidate_classifier
 
-            encodings = get_face_embeddings(_image_to_np(await face.read()))
-            if encodings:
-                face_emb = encodings[0].tolist()
-            if _cloud():
-                invalidate_classifier()
-        except Exception as exc:
-            raise HTTPException(status_code=400, detail=f"Face enrollment failed: {exc}") from exc
-    if voice:
-        voice_bytes = await voice.read()
+        encodings = get_face_embeddings(_image_to_np(await face.read()), max_side=640, upsample=1)
+        if not encodings:
+            raise HTTPException(status_code=400, detail="No face found. Face the light, move closer, and try again.")
+        if len(encodings) > 1:
+            raise HTTPException(status_code=400, detail="Multiple faces found. Only one person should be in frame.")
+        face_emb = encodings[0].tolist()
+        invalidate_classifier()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Face enrollment failed: {exc}") from exc
     if _cloud():
         created = cloud.create_student(name, face_embedding=face_emb, voice_embedding=None)
         student = created[0] if created else None
@@ -248,7 +256,13 @@ async def student_register(
     if not student:
         raise HTTPException(status_code=500, detail="Could not create student profile.")
     if voice_bytes:
-        background_tasks.add_task(_attach_voice_later, student["student_id"], voice_bytes, _cloud())
+        try:
+            _attach_voice(student["student_id"], voice_bytes, _cloud())
+        except Exception as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Face saved, but voice enrollment failed: {exc}. Record 2–4 seconds and register again, or skip voice.",
+            ) from exc
     allowed, message = login_allowed(student["student_id"])
     if not allowed:
         raise HTTPException(status_code=403, detail=message)
@@ -259,15 +273,14 @@ async def student_register(
 @app.post("/api/auth/student/face")
 async def student_face_login(face: UploadFile = File(...)):
     try:
-        from src.pipelines.face_pipeline import predict_attendance
+        from src.pipelines.face_pipeline import match_faces
 
         img = _image_to_np(await face.read())
         if _cloud():
-            detected, _ids, num_faces = predict_attendance(img)
-            roster = cloud.get_all_students("student_id, name") or []
+            roster = cloud.get_all_students("student_id, name, face_embedding") or []
         else:
-            detected, num_faces = _match_local_faces(img)
             roster = local.read_db()["students"]
+        detected, num_faces = match_faces(img, roster, max_side=640, upsample=1)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Face scan failed: {exc}") from exc
     if num_faces == 0:
@@ -357,20 +370,14 @@ async def teacher_face_attendance(
     unknown_faces = 0
     roster = _subject_roster(session, subject_id)
     try:
-        from src.pipelines.face_pipeline import predict_attendance
+        from src.pipelines.face_pipeline import match_faces
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Face models are not available: {exc}") from exc
     for photo in photos:
         img = _image_to_np(await photo.read())
-        if _cloud():
-            detected, all_ids, num_faces = predict_attendance(img)
-            unknown_faces += max(0, num_faces - len(detected))
-            for sid in detected:
-                present[int(sid)] = True
-        else:
-            detected, num_faces = _match_local_faces(img, roster)
-            unknown_faces += max(0, num_faces - len(detected))
-            present.update({int(sid): True for sid in detected})
+        detected, num_faces = match_faces(img, roster, max_side=960, upsample=1)
+        unknown_faces += max(0, num_faces - len(detected))
+        present.update({int(sid): True for sid in detected})
     present_ids = [int(sid) for sid in present]
     absent_ids = [int(row["student_id"]) for row in roster if int(row["student_id"]) not in present]
     return {
@@ -388,18 +395,21 @@ async def teacher_voice_attendance(
     session: dict = Depends(require_role("teacher")),
 ):
     roster = _subject_roster(session, subject_id)
-    candidates = {}
     try:
-        import numpy as np
+        from src.pipelines.voice_pipeline import as_voice_vector, process_bulk_audio
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"NumPy is required for voice attendance: {exc}") from exc
+        raise HTTPException(status_code=500, detail=f"Voice models are not available: {exc}") from exc
+    candidates = {}
     for row in roster:
-        emb = row.get("voice_embedding")
-        if emb:
-            candidates[int(row["student_id"])] = np.array(emb)
+        emb = as_voice_vector(row.get("voice_embedding"))
+        if emb is not None:
+            candidates[int(row["student_id"])] = emb
+    if not candidates:
+        raise HTTPException(
+            status_code=400,
+            detail="No enrolled students in this subject have a voice profile yet. Ask them to register with a short voice clip.",
+        )
     try:
-        from src.pipelines.voice_pipeline import process_bulk_audio
-
         identified = process_bulk_audio(await audio.read(), candidates) or {}
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Voice attendance failed: {exc}") from exc
@@ -517,31 +527,12 @@ def _subject_roster(session, subject_id: int):
             raise HTTPException(status_code=403, detail="Subject is not yours.")
         enrollments = supabase.table("subject_students").select("student_id").eq("subject_id", subject_id).execute().data or []
         ids = {int(row["student_id"]) for row in enrollments}
-        return [row for row in (cloud.get_all_students("student_id, name") or []) if int(row.get("student_id")) in ids]
+        return [
+            row
+            for row in (cloud.get_all_students("student_id, name, face_embedding, voice_embedding") or [])
+            if int(row.get("student_id")) in ids
+        ]
     subjects = local.teacher_subjects(teacher_id)
     if not any(int(row.get("subject_id")) == int(subject_id) for row in subjects):
         raise HTTPException(status_code=403, detail="Subject is not yours.")
     return local.students_for_subject(subject_id)
-
-
-def _match_local_faces(img, roster=None):
-    import numpy as np
-    from src.pipelines.face_pipeline import get_face_embeddings
-
-    encodings = get_face_embeddings(img)
-    rows = roster if roster is not None else local.read_db()["students"]
-    detected = {}
-    for encoding in encodings:
-        best_id = None
-        best = 999
-        for row in rows:
-            emb = row.get("face_embedding")
-            if not emb:
-                continue
-            score = float(np.linalg.norm(np.array(emb) - encoding))
-            if score < best:
-                best = score
-                best_id = int(row["student_id"])
-        if best_id is not None and best <= 0.6:
-            detected[best_id] = True
-    return detected, len(encodings)

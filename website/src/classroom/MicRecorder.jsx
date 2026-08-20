@@ -90,8 +90,8 @@ export default function MicRecorder({
     }
     const rate = ctxRef.current?.sampleRate || 16000;
     stopAll();
-    if (!samples.length) {
-      setError("No audio captured. Try again.");
+    if (!samples.length || samples.length < rate * 0.8) {
+      setError("Clip was too short. Record 2–4 seconds, then stop.");
       return;
     }
     const blob = encodeWav(samples, rate);

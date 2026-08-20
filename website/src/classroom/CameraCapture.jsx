@@ -56,7 +56,7 @@ export default function CameraCapture({
     canvas.width = Math.max(1, Math.round(sourceW * scale));
     canvas.height = Math.max(1, Math.round(sourceH * scale));
     canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
-    return new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.72));
+    return new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
   };
 
   const snap = async () => {
