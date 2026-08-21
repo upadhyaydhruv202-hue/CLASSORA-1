@@ -1,17 +1,22 @@
-"""Face identity — same dlib 128-d pipeline as the original Streamlit app.
+"""Face identity — original dlib 128-d + linear SVM pipeline.
 
-Match is nearest-neighbor L2 (face_recognition.compare_faces / 0.6), not SVM.
-SVM broke FaceID when only one student was enrolled and often picked the
-wrong person even with two or more.
+Source: https://github.com/shradha-khapra/ai-attendance-project-app
+  src/pipelines/face_pipeline.py
+
+Streamlit (@st.cache_resource / st.cache_resource.clear) is replaced by a
+module-level singleton so this file can run under FastAPI. Detector,
+shape predictor, ResNet embeddings, SVC, and the 0.6 L2 check are unchanged.
 """
 import json
 
 import dlib
 import numpy as np
 import face_recognition_models
-from PIL import Image
+from sklearn.svm import SVC
 
+from src.database.config import is_supabase_configured
 from src.database.db import get_all_students
+
 
 _dlib_models = None
 _trained_model = None
@@ -20,13 +25,8 @@ FACE_SIZE = 128
 MATCH_THRESHOLD = 0.6
 
 
-def _shrink(image_np, max_side=640):
-    image = Image.fromarray(image_np)
-    image.thumbnail((max_side, max_side))
-    return np.array(image)
-
-
 def as_face_vector(value):
+    """Parse a stored embedding (list or JSON string) for DB/API integration."""
     if value is None:
         return None
     if isinstance(value, str):
@@ -57,63 +57,62 @@ def load_dlib_models():
     return _dlib_models
 
 
-def get_face_embeddings(image_np, max_side=640, upsample=1):
-    """HOG detector + 128-d descriptor. upsample=1 matches face_recognition defaults."""
+def get_face_embeddings(image_np):
     detector, sp, facerec = load_dlib_models()
-    image_np = _shrink(image_np, max_side=max_side)
-    faces = detector(image_np, upsample)
+    faces = detector(image_np, 1)
+
     encodings = []
+
     for face in faces:
         shape = sp(image_np, face)
-        face_descriptor = facerec.compute_face_descriptor(image_np, shape, 1)
-        encodings.append(np.array(face_descriptor, dtype=np.float64))
+        face_descriptor = facerec.compute_face_descriptor(image_np, shape, 1)  # 128 embedding
+
+        encodings.append(np.array(face_descriptor))
     return encodings
 
 
-def known_face_rows(rows):
-    known = []
-    for row in rows or []:
-        vec = as_face_vector(row.get("face_embedding"))
-        if vec is None:
-            continue
-        try:
-            sid = int(row["student_id"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        known.append((sid, vec))
-    return known
+def _student_db():
+    if is_supabase_configured():
+        return get_all_students() or []
+    from src.database import local_store as local
 
-
-def match_faces(image_np, known_rows, threshold=MATCH_THRESHOLD, max_side=640, upsample=1):
-    """Return ({student_id: True, ...}, faces_found) using L2 ≤ 0.6 like Streamlit."""
-    encodings = get_face_embeddings(image_np, max_side=max_side, upsample=upsample)
-    known = known_face_rows(known_rows)
-    detected = {}
-    for encoding in encodings:
-        best_id = None
-        best = 999.0
-        for sid, vec in known:
-            score = float(np.linalg.norm(vec - encoding))
-            if score < best:
-                best = score
-                best_id = sid
-        if best_id is not None and best <= threshold:
-            detected[best_id] = True
-    return detected, len(encodings)
+    return local.read_db().get("students") or []
 
 
 def get_trained_model():
-    """Kept for startup preload. Matching no longer depends on SVM."""
     global _trained_model
     if _trained_model is not None:
         return _trained_model
-    student_db = get_all_students("student_id, face_embedding") or []
-    known = known_face_rows(student_db)
-    if not known:
+
+    X = []
+    y = []
+
+    student_db = _student_db()
+
+    if not student_db:
         return None
-    X = [vec for _, vec in known]
-    y = [sid for sid, _ in known]
-    _trained_model = {"clf": None, "X": X, "y": y}
+
+    for student in student_db:
+        embedding = student.get("face_embedding")
+        vec = as_face_vector(embedding)
+        if vec is None and embedding:
+            vec = np.array(embedding)
+        if vec is None or getattr(vec, "size", 0) != FACE_SIZE:
+            continue
+        X.append(np.array(vec))
+        y.append(student.get("student_id"))
+
+    if len(X) == 0:
+        return 0
+
+    clf = SVC(kernel="linear", probability=True, class_weight="balanced")
+
+    try:
+        clf.fit(X, y)
+    except ValueError:
+        pass
+
+    _trained_model = {"clf": clf, "X": X, "y": y}
     return _trained_model
 
 
@@ -124,18 +123,52 @@ def invalidate_classifier():
 
 def train_classifier():
     invalidate_classifier()
-    return bool(get_trained_model())
+    model_data = get_trained_model()
+    return bool(model_data)
 
 
-def predict_attendance(class_image_np, known_students=None):
-    if known_students is None:
-        known_students = get_all_students("student_id, face_embedding") or []
-    detected, num_faces = match_faces(
-        class_image_np,
-        known_students,
-        threshold=MATCH_THRESHOLD,
-        max_side=960,
-        upsample=1,
-    )
-    all_ids = sorted({int(row["student_id"]) for row in (known_students or []) if row.get("student_id") is not None})
-    return detected, all_ids, num_faces
+def predict_attendance(class_image_np):
+    encodings = get_face_embeddings(class_image_np)
+
+    detected_student = {}
+
+    model_data = get_trained_model()
+
+    if not model_data:
+        return detected_student, [], len(encodings)
+
+    clf = model_data["clf"]
+    X_train = model_data["X"]
+    y_train = model_data["y"]
+
+    all_students = sorted(list(set(y_train)))
+
+    for encoding in encodings:
+        if len(all_students) >= 2:
+            predicted_id = int(clf.predict([encoding])[0])
+        else:
+            predicted_id = int(all_students[0])
+
+        student_embedding = X_train[y_train.index(predicted_id)]
+
+        best_match_score = np.linalg.norm(student_embedding - encoding)
+
+        resemblance_threshold = 0.6
+
+        if best_match_score <= resemblance_threshold:
+            detected_student[predicted_id] = True
+    return detected_student, all_students, len(encodings)
+
+
+def match_faces(image_np, known_rows=None, threshold=MATCH_THRESHOLD, max_side=640, upsample=1):
+    """API adapter: original predict_attendance, then optional roster filter."""
+    detected, _all_ids, num_faces = predict_attendance(image_np)
+    if known_rows:
+        allowed = set()
+        for row in known_rows:
+            try:
+                allowed.add(int(row["student_id"]))
+            except (KeyError, TypeError, ValueError):
+                pass
+        detected = {sid: True for sid in detected if int(sid) in allowed}
+    return detected, num_faces

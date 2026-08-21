@@ -5,10 +5,46 @@ export const DEMO_URL =
 
 export const cineNav = [
   { id: "experience", label: "Experience" },
-  { id: "ai-demo", label: "AI Demo" },
+  { id: "problem", label: "About" },
+  { id: "features", label: "Features" },
   { id: "how", label: "How It Works" },
-  { id: "impact", label: "Impact" },
-  { id: "technology", label: "Technology" },
+  { id: "ai-demo", label: "Lab" },
+];
+
+export const landingFeatures = [
+  {
+    kicker: "01",
+    title: "Face and voice attendance",
+    body: "Teachers capture a class photo or a short recording. CLASSORA matches the enrolled roster — not a guessed list.",
+  },
+  {
+    kicker: "02",
+    title: "Explainable support-risk",
+    body: "A deterministic score with factor contributions. It is a support signal, not a diagnosis and not a black box.",
+  },
+  {
+    kicker: "03",
+    title: "Human-in-the-loop cases",
+    body: "Mentorship, complaints, and interventions exist only after a counsellor or staff member reviews them.",
+  },
+  {
+    kicker: "04",
+    title: "Three portals, one classroom",
+    body: "Student FaceID, teacher register, and the Success Hub for counsellors and administrators.",
+  },
+];
+
+export const landingStats = [
+  { value: "3", label: "Classroom roles", body: "Student, teacher, and counsellor or admin — one working app." },
+  { value: "5", label: "Pipeline stages", body: "Roster signals through prediction to a human decision." },
+  { value: "4", label: "Support paths", body: "Academic, attendance, faculty, and engagement — after review." },
+  { value: "0", label: "Automatic actions", body: "Nothing is written as an intervention without a person." },
+];
+
+export const proofPoints = [
+  { title: "Working product", body: "Launch CLASSORA opens the classroom app — FaceID, registers, and the Success Hub." },
+  { title: "Inspectable scoring", body: "success-risk-v1.1 is additive and explained in-product. It is not a trained neural net." },
+  { title: "Built for SIH 2026", body: "Six builders. Live site and API. Not a slide-deck prototype." },
 ];
 
 export const pipeline = [

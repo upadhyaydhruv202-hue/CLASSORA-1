@@ -28,6 +28,11 @@ function encodeWav(samples, sampleRate) {
   return new Blob([buffer], { type: "audio/wav" });
 }
 
+function pickMime() {
+  const types = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+  return types.find((type) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(type)) || "";
+}
+
 export default function MicRecorder({
   onCapture,
   label = "Record classroom audio",
@@ -37,19 +42,19 @@ export default function MicRecorder({
   const [recording, setRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [preview, setPreview] = useState("");
+  const recorderRef = useRef(null);
   const chunksRef = useRef([]);
-  const ctxRef = useRef(null);
   const streamRef = useRef(null);
   const timerRef = useRef(null);
 
-  useEffect(() => () => stopAll(), []);
+  useEffect(() => () => stopTracks(), []);
 
-  const stopAll = () => {
+  const stopTracks = () => {
     clearInterval(timerRef.current);
+    recorderRef.current?.state === "recording" && recorderRef.current.stop();
     streamRef.current?.getTracks().forEach((track) => track.stop());
-    ctxRef.current?.close?.();
     streamRef.current = null;
-    ctxRef.current = null;
+    recorderRef.current = null;
     setRecording(false);
   };
 
@@ -61,15 +66,13 @@ export default function MicRecorder({
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
       streamRef.current = stream;
-      const ctx = new AudioContext({ sampleRate: 16000 });
-      ctxRef.current = ctx;
-      const source = ctx.createMediaStreamSource(stream);
-      const processor = ctx.createScriptProcessor(4096, 1, 1);
-      processor.onaudioprocess = (event) => {
-        chunksRef.current.push(new Float32Array(event.inputBuffer.getChannelData(0)));
+      const mimeType = pickMime();
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      recorderRef.current = recorder;
+      recorder.ondataavailable = (event) => {
+        if (event.data?.size) chunksRef.current.push(event.data);
       };
-      source.connect(processor);
-      processor.connect(ctx.destination);
+      recorder.start(200);
       setRecording(true);
       setSeconds(0);
       timerRef.current = setInterval(() => setSeconds((n) => n + 1), 1000);
@@ -79,25 +82,36 @@ export default function MicRecorder({
   };
 
   const stop = async () => {
+    const recorder = recorderRef.current;
     clearInterval(timerRef.current);
-    const pieces = chunksRef.current;
-    const total = pieces.reduce((sum, chunk) => sum + chunk.length, 0);
-    const samples = new Float32Array(total);
-    let offset = 0;
-    for (const chunk of pieces) {
-      samples.set(chunk, offset);
-      offset += chunk.length;
-    }
-    const rate = ctxRef.current?.sampleRate || 16000;
-    stopAll();
-    if (!samples.length || samples.length < rate * 0.8) {
-      setError("Clip was too short. Record 2–4 seconds, then stop.");
+    if (!recorder || recorder.state === "inactive") {
+      stopTracks();
       return;
     }
-    const blob = encodeWav(samples, rate);
-    const file = new File([blob], `voice-${Date.now()}.wav`, { type: "audio/wav" });
-    setPreview(URL.createObjectURL(blob));
-    onCapture?.(file);
+    const blob = await new Promise((resolve) => {
+      recorder.onstop = () => resolve(new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" }));
+      recorder.stop();
+    });
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    recorderRef.current = null;
+    setRecording(false);
+    try {
+      const ctx = new AudioContext();
+      const buffer = await ctx.decodeAudioData(await blob.arrayBuffer());
+      await ctx.close();
+      const samples = buffer.getChannelData(0);
+      if (!samples.length || samples.length < buffer.sampleRate * 0.8) {
+        setError("Clip was too short. Record 2–4 seconds, then stop.");
+        return;
+      }
+      const wav = encodeWav(samples, buffer.sampleRate);
+      const file = new File([wav], `voice-${Date.now()}.wav`, { type: "audio/wav" });
+      setPreview(URL.createObjectURL(wav));
+      onCapture?.(file);
+    } catch (err) {
+      setError(err.message || "Could not read that recording. Try again, and speak for 2–4 seconds.");
+    }
   };
 
   return (

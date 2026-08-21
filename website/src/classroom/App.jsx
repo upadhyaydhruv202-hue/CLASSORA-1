@@ -372,22 +372,23 @@ function StudentAuth({ health, busy, setBusy, setError, signIn, onBack }) {
   const [face, setFace] = useState(null);
   const [voice, setVoice] = useState(null);
   const [mode, setMode] = useState("login");
-  const [directory, setDirectory] = useState([]);
+  const [info, setInfo] = useState("");
 
-  useEffect(() => {
-    api.studentDirectory().then(setDirectory).catch(() => setDirectory([]));
-  }, []);
-
-  const loginFace = async (event) => {
-    event.preventDefault();
-    if (!face) return setError("Capture your face with the camera first.");
-    setBusy(true);
+  const handleFace = async (file) => {
+    setFace(file);
     setError("");
+    if (!file) {
+      setMode("login");
+      setInfo("");
+      return;
+    }
+    if (mode === "register") return;
+    setBusy(true);
     try {
-      const payload = await api.studentFace(face);
+      const payload = await api.studentFace(file);
       if (!payload.matched) {
         setMode("register");
-        setError(payload.detail);
+        setInfo(payload.detail || "Face detected. You're a new student — enter your name to register.");
         return;
       }
       signIn(payload);
@@ -405,19 +406,9 @@ function StudentAuth({ health, busy, setBusy, setError, signIn, onBack }) {
     setBusy(true);
     setError("");
     try {
-      signIn(await api.studentRegister({ name, face, voice }));
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const quick = async (id) => {
-    setBusy(true);
-    setError("");
-    try {
-      signIn(await api.studentQuick(id));
+      const payload = await api.studentRegister({ name, face, voice });
+      if (payload.voice_warning) setError(payload.voice_warning);
+      signIn(payload);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -426,7 +417,16 @@ function StudentAuth({ health, busy, setBusy, setError, signIn, onBack }) {
   };
 
   return (
-    <AuthCard kicker="Student access" title="Login using FaceID" caption="Secure face recognition — no password required. Allow the camera, look at the lens, then capture." onBack={onBack}>
+    <AuthCard
+      kicker="Student access"
+      title={mode === "register" ? "New student — complete registration" : "Login using FaceID"}
+      caption={
+        mode === "register"
+          ? "Your face is new to CLASSORA. Enter your name. Voice is optional, but needed later for classroom voice attendance."
+          : "Allow the camera, look at the lens, then capture. If this face is already enrolled, you are signed in automatically."
+      }
+      onBack={onBack}
+    >
       {health && !health.face_models_ready && (
         <Notice
           tone="warn"
@@ -434,35 +434,31 @@ function StudentAuth({ health, busy, setBusy, setError, signIn, onBack }) {
           body={`Camera login will fail until dlib + face_recognition_models finish installing. Missing: ${Object.entries(health.models || {}).filter(([, ok]) => !ok).map(([n]) => n).join(", ") || "unknown"}`}
         />
       )}
-      <form onSubmit={mode === "login" ? loginFace : register}>
+      {health && health.voice_models_ready && !health.voice_weights_loaded && (
+        <Notice
+          tone="warn"
+          title="Voice model is warming up"
+          body="First voice request loads Torch weights. Wait until this notice disappears, then record."
+        />
+      )}
+      {info && <Notice title="Face detected" body={info} tone="ok" />}
+      <form onSubmit={mode === "register" ? register : (event) => event.preventDefault()}>
         {mode === "register" && <Field label="Your name" value={name} onChange={(e) => setName(e.target.value)} placeholder="E.g. Hamza Rizvi" />}
         <div className="co-media mb-4">
-          <CameraCapture onCapture={setFace} captureLabel="Capture face" maxSide={720} />
+          <CameraCapture onCapture={handleFace} captureLabel={busy && mode === "login" ? "Matching your face…" : "Capture face"} maxSide={720} />
         </div>
         {mode === "register" && (
           <div className="co-media mb-4">
             <MicRecorder onCapture={setVoice} label="Optional voice enrollment" hint='Record a short phrase like “I am present. My name is …”' />
           </div>
         )}
-        <button disabled={busy} className="co-btn co-btn-stretch">
-          {busy ? (mode === "register" ? "Saving your face profile…" : "Matching your face…") : mode === "login" ? "Login with FaceID" : "Create account"}
-        </button>
+        {mode === "register" && (
+          <button disabled={busy} className="co-btn co-btn-stretch">
+            {busy ? "Saving your profile…" : "Create account"}
+          </button>
+        )}
+        {mode === "login" && busy && <p className="text-center text-sm text-[#64748B]">Matching your face…</p>}
       </form>
-      <button type="button" className="co-btn co-btn-tertiary co-btn-stretch mt-3" onClick={() => setMode(mode === "login" ? "register" : "login")}>
-        {mode === "login" ? "New here? Register a profile" : "Back to FaceID login"}
-      </button>
-      {directory.length > 0 && (
-        <div className="mt-6">
-          <p className="co-caption">Already registered? Quick login</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {directory.map((row) => (
-              <button key={row.student_id} type="button" className="co-btn co-btn-secondary" onClick={() => quick(row.student_id)}>
-                {row.name}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
     </AuthCard>
   );
 }
@@ -648,8 +644,8 @@ function TeacherDesk({ session, health, setError, onLogout }) {
             </div>
             <div className="rounded-3xl border border-[#E2E8F0] p-4">
               <h2 className="font-semibold">Voice attendance</h2>
-              {health && !health.voice_models_ready && (
-                <p className="mt-2 text-sm text-amber-700">Voice models are not ready yet (Resemblyzer / librosa).</p>
+              {health && health.voice_models_ready && !health.voice_weights_loaded && (
+                <p className="mt-2 text-sm text-amber-700">Voice model is still loading. Wait a few seconds, then try again.</p>
               )}
               <div className="mt-3">
                 <MicRecorder

@@ -4,15 +4,73 @@ import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { pipeline } from "../content";
 
+const RING_Y = 1.55;
+const RING_Z = -48;
+const RING_R = 1.05;
+
 const CAM = [
   { t: 0, p: [0.08, 1.52, 3.7], l: [1.38, 1.08, 0] },
-  { t: 0.18, p: [0.35, 1.92, -4.4], l: [0, 0.82, -9.2] },
-  { t: 0.36, p: [0.05, 1.58, -13.4], l: [0, 1.22, -18.2] },
-  { t: 0.54, p: [2.55, 1.72, -22.6], l: [0, 1.22, -27.2] },
-  { t: 0.72, p: [0.12, 9.4, -28.5], l: [0, 0.15, -38] },
-  { t: 0.9, p: [0, 1.52, -43.2], l: [0, 1.12, -48] },
-  { t: 1, p: [0, 1.42, -44.6], l: [0, 1.12, -48] },
+  { t: 0.14, p: [0.35, 1.92, -4.4], l: [0, 0.82, -9.2] },
+  { t: 0.28, p: [0.05, 1.58, -13.4], l: [0, 1.22, -18.2] },
+  { t: 0.42, p: [2.55, 1.72, -22.6], l: [0, 1.22, -27.2] },
+  { t: 0.56, p: [0.12, 9.4, -28.5], l: [0, 0.15, -38] },
+  { t: 0.7, p: [0, RING_Y, RING_Z + 5.6], l: [0, RING_Y, RING_Z] },
+  { t: 1, p: [0, RING_Y, RING_Z + 5.6], l: [0, RING_Y, RING_Z] },
 ];
+
+function cineEase(t) {
+  const x = THREE.MathUtils.clamp(t, 0, 1);
+  const x1 = 0.22;
+  const y1 = 1;
+  const x2 = 0.36;
+  const y2 = 1;
+  let u = x;
+  for (let i = 0; i < 6; i += 1) {
+    const cx = 3 * x1;
+    const bx = 3 * (x2 - x1) - cx;
+    const ax = 1 - cx - bx;
+    const qx = ((ax * u + bx) * u + cx) * u - x;
+    const dqx = (3 * ax * u + 2 * bx) * u + cx;
+    u -= qx / Math.max(dqx, 1e-6);
+  }
+  const cy = 3 * y1;
+  const by = 3 * (y2 - y1) - cy;
+  const ay = 1 - cy - by;
+  return ((ay * u + by) * u + cy) * u;
+}
+
+function ringCameraDistance(camera) {
+  const vFov = THREE.MathUtils.degToRad(camera.fov);
+  const spanY = 2 * Math.tan(vFov / 2);
+  const spanX = spanY * Math.max(camera.aspect, 0.01);
+  const minSpan = Math.min(spanX, spanY);
+  const screenFrac = camera.aspect < 1 ? 0.78 : 0.5;
+  return (2 * RING_R) / (screenFrac * minSpan);
+}
+
+function portalStage(scroll) {
+  const demo = typeof document !== "undefined" ? document.getElementById("demo") : null;
+  const footer = typeof document !== "undefined" ? document.querySelector(".cine-footer") : null;
+  const vh = typeof window !== "undefined" ? window.innerHeight || 1 : 1;
+
+  let arrive = THREE.MathUtils.smoothstep(scroll, 0.62, 0.76);
+  let leave = THREE.MathUtils.smoothstep(scroll, 0.9, 0.995);
+
+  if (demo) {
+    const rect = demo.getBoundingClientRect();
+    const center = rect.top + rect.height / 2;
+    const fromMid = (center - vh * 0.5) / vh;
+    arrive = 1 - THREE.MathUtils.clamp((fromMid - 0.04) / 0.58, 0, 1);
+    leave = THREE.MathUtils.clamp((-fromMid - 0.05) / 0.4, 0, 1);
+  }
+  if (footer) {
+    const top = footer.getBoundingClientRect().top;
+    const footerIn = THREE.MathUtils.smoothstep(vh - top, vh * 0.04, vh * 0.42);
+    leave = Math.max(leave, footerIn);
+  }
+
+  return { arrive, leave };
+}
 
 function lerpCam(t) {
   const x = THREE.MathUtils.clamp(t, 0, 1);
@@ -400,20 +458,41 @@ function Institution({ engine }) {
 }
 
 function Portal({ engine }) {
-  const ring = useRef();
+  const group = useRef();
+  const spin = useRef();
+  const glow = useRef();
+
   useFrame((state) => {
-    if (!ring.current || engine.current.reduce) return;
-    ring.current.rotation.z = state.clock.elapsedTime * 0.22;
+    if (!group.current) return;
+    const { arrive, leave } = portalStage(engine.current.scroll);
+    const reduce = engine.current.reduce;
+    const a = reduce ? (arrive > 0.55 && leave < 0.45 ? 1 : 0) : cineEase(arrive);
+    const e = reduce ? (leave >= 0.45 ? 1 : 0) : cineEase(leave);
+    const opacity = Math.max(0, a * (1 - e));
+    const scale = THREE.MathUtils.lerp(0.86, 1, a) * THREE.MathUtils.lerp(1, 0.16, e);
+    const recede = THREE.MathUtils.lerp(0, 10, e);
+
+    group.current.position.set(0, RING_Y, RING_Z - recede);
+    group.current.scale.setScalar(Math.max(scale, 0.001));
+    group.current.visible = opacity > 0.001;
+    group.current.rotation.set(0, 0, 0);
+
+    if (spin.current?.material) spin.current.material.opacity = opacity;
+    if (glow.current?.material) glow.current.material.opacity = 0.45 * opacity;
+    if (spin.current && !reduce && opacity > 0.04) {
+      spin.current.rotation.z = state.clock.elapsedTime * 0.18;
+    }
   });
+
   return (
-    <group position={[0, 1.15, -48]}>
-      <mesh ref={ring} rotation={[0, 0, 0]}>
-        <torusGeometry args={[1.05, 0.028, 12, 80]} />
-        <meshBasicMaterial color="#2563EB" />
+    <group ref={group} position={[0, RING_Y, RING_Z]}>
+      <mesh ref={spin} rotation={[0, 0, 0]}>
+        <torusGeometry args={[RING_R, 0.028, 12, 80]} />
+        <meshBasicMaterial color="#2563EB" transparent depthWrite={false} opacity={0} />
       </mesh>
-      <mesh>
-        <torusGeometry args={[1.05, 0.01, 8, 80]} />
-        <meshBasicMaterial color="#93C5FD" transparent opacity={0.45} />
+      <mesh ref={glow} rotation={[0, 0, 0]}>
+        <torusGeometry args={[RING_R, 0.01, 8, 80]} />
+        <meshBasicMaterial color="#93C5FD" transparent depthWrite={false} opacity={0} />
       </mesh>
     </group>
   );
@@ -442,16 +521,30 @@ function Ground() {
 
 function Rig({ engine }) {
   const look = useMemo(() => new THREE.Vector3(), []);
+  const axisP = useMemo(() => new THREE.Vector3(), []);
+  const axisL = useMemo(() => new THREE.Vector3(), []);
   const { camera } = useThree();
   useFrame(() => {
     const { p, l } = lerpCam(engine.current.scroll);
-    const mx = engine.current.mouse.x * 0.28;
-    const my = engine.current.mouse.y * 0.16;
-    const damp = engine.current.reduce ? 1 : 0.055;
-    camera.position.x = THREE.MathUtils.lerp(camera.position.x, p[0] + mx, damp);
-    camera.position.y = THREE.MathUtils.lerp(camera.position.y, p[1] + my, damp);
-    camera.position.z = THREE.MathUtils.lerp(camera.position.z, p[2], damp);
-    look.set(l[0], l[1], l[2]);
+    const endMix = cineEase(THREE.MathUtils.smoothstep(engine.current.scroll, 0.62, 0.76));
+    const dist = ringCameraDistance(camera);
+    axisP.set(0, RING_Y, RING_Z + dist);
+    axisL.set(0, RING_Y, RING_Z);
+    const tx = THREE.MathUtils.lerp(p[0], axisP.x, endMix);
+    const ty = THREE.MathUtils.lerp(p[1], axisP.y, endMix);
+    const tz = THREE.MathUtils.lerp(p[2], axisP.z, endMix);
+    const lx = THREE.MathUtils.lerp(l[0], axisL.x, endMix);
+    const ly = THREE.MathUtils.lerp(l[1], axisL.y, endMix);
+    const lz = THREE.MathUtils.lerp(l[2], axisL.z, endMix);
+    const end = endMix > 0.04;
+    const mx = end ? 0 : engine.current.mouse.x * 0.28;
+    const my = end ? 0 : engine.current.mouse.y * 0.16;
+    const damp = engine.current.reduce ? 1 : end ? 0.085 : 0.055;
+    camera.position.x = THREE.MathUtils.lerp(camera.position.x, tx + mx, damp);
+    camera.position.y = THREE.MathUtils.lerp(camera.position.y, ty + my, damp);
+    camera.position.z = THREE.MathUtils.lerp(camera.position.z, tz, damp);
+    look.set(lx, ly, lz);
+    camera.up.set(0, 1, 0);
     camera.lookAt(look);
   });
   return null;
@@ -475,7 +568,7 @@ export default function World({ engine }) {
   return (
     <>
       <color attach="background" args={["#F8FAFC"]} />
-      <fog attach="fog" args={["#F8FAFC", 10, 32]} />
+      <fog attach="fog" args={["#F8FAFC", 12, 46]} />
       <ambientLight intensity={0.58} />
       <hemisphereLight args={["#EFF6FF", "#E2E8F0", 0.55]} />
       <directionalLight position={[5, 8, 3]} intensity={1.1} color="#ffffff" />

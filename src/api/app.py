@@ -37,6 +37,12 @@ async def lifespan(_app):
         load_dlib_models()
     except Exception:
         pass
+    try:
+        from src.pipelines.voice_pipeline import warmup_voice_encoder
+
+        warmup_voice_encoder()
+    except Exception:
+        pass
     yield
 
 
@@ -133,6 +139,13 @@ def health():
         face_loaded = False
     face_ready = all(models[key] for key in ("numpy", "dlib", "face_recognition_models"))
     voice_ready = all(models[key] for key in ("numpy", "librosa", "resemblyzer"))
+    voice_loaded = False
+    try:
+        from src.pipelines.voice_pipeline import voice_encoder_ready
+
+        voice_loaded = voice_encoder_ready()
+    except Exception:
+        voice_loaded = False
     return {
         "ok": True,
         "ui": "react",
@@ -142,6 +155,7 @@ def health():
         "face_models_ready": face_ready,
         "voice_models_ready": voice_ready,
         "face_weights_loaded": face_loaded,
+        "voice_weights_loaded": voice_loaded,
         "models": models,
     }
 
@@ -237,15 +251,14 @@ async def student_register(
     if not face:
         raise HTTPException(status_code=400, detail="Capture your face to register.")
     try:
-        from src.pipelines.face_pipeline import get_face_embeddings, invalidate_classifier
+        from src.pipelines.face_pipeline import get_face_embeddings
 
-        encodings = get_face_embeddings(_image_to_np(await face.read()), max_side=640, upsample=1)
+        encodings = get_face_embeddings(_image_to_np(await face.read()))
         if not encodings:
             raise HTTPException(status_code=400, detail="No face found. Face the light, move closer, and try again.")
         if len(encodings) > 1:
             raise HTTPException(status_code=400, detail="Multiple faces found. Only one person should be in frame.")
         face_emb = encodings[0].tolist()
-        invalidate_classifier()
     except HTTPException:
         raise
     except Exception as exc:
@@ -257,14 +270,26 @@ async def student_register(
         student = local.create_student(name, face_embedding=face_emb, voice_embedding=None)
     if not student:
         raise HTTPException(status_code=500, detail="Could not create student profile.")
+    try:
+        from src.pipelines.face_pipeline import train_classifier
+
+        train_classifier()
+    except Exception:
+        pass
     if voice_bytes:
         try:
             _attach_voice(student["student_id"], voice_bytes, _cloud())
         except Exception as exc:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Face saved, but voice enrollment failed: {exc}. Record 2–4 seconds and register again, or skip voice.",
-            ) from exc
+            allowed, message = login_allowed(student["student_id"])
+            if not allowed:
+                raise HTTPException(status_code=403, detail=message) from exc
+            mark_login(name, "student")
+            payload = _token_body(session_payload(role="student", student=student))
+            payload["voice_warning"] = (
+                f"Account created, but voice enrollment failed: {exc}. "
+                "You can still use FaceID. Record 2–4 seconds next time to enable voice attendance."
+            )
+            return payload
     allowed, message = login_allowed(student["student_id"])
     if not allowed:
         raise HTTPException(status_code=403, detail=message)
@@ -275,14 +300,14 @@ async def student_register(
 @app.post("/api/auth/student/face")
 async def student_face_login(face: UploadFile = File(...)):
     try:
-        from src.pipelines.face_pipeline import match_faces
+        from src.pipelines.face_pipeline import predict_attendance
 
         img = _image_to_np(await face.read())
         if _cloud():
             roster = cloud.get_all_students("student_id, name, face_embedding") or []
         else:
             roster = local.read_db()["students"]
-        detected, num_faces = match_faces(img, roster, max_side=640, upsample=1)
+        detected, _all_ids, num_faces = predict_attendance(img)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Face scan failed: {exc}") from exc
     if num_faces == 0:
@@ -290,7 +315,7 @@ async def student_face_login(face: UploadFile = File(...)):
     if num_faces > 1:
         raise HTTPException(status_code=400, detail="Multiple faces found. Only one person should be in frame.")
     if not detected:
-        return {"matched": False, "detail": "Face detected, but no matching profile yet. Register below."}
+        return {"matched": False, "detail": "Face detected. You're a new student — enter your name to register."}
     student_id = int(list(detected.keys())[0])
     student = next((row for row in roster if int(row.get("student_id")) == student_id), None)
     if not student:
@@ -300,23 +325,6 @@ async def student_face_login(face: UploadFile = File(...)):
         raise HTTPException(status_code=403, detail=message)
     mark_login(student.get("name"), "student")
     return {"matched": True, **_token_body(session_payload(role="student", student=sanitize_student(student)))}
-
-
-@app.post("/api/auth/student/quick")
-def student_quick_login(student_id: int):
-    if _cloud():
-        student = cloud.get_student_public(student_id)
-        if student:
-            full = next((row for row in (cloud.get_all_students() or []) if int(row.get("student_id")) == int(student_id)), student)
-            student = full
-    else:
-        student = local.public_student(local.get_student(student_id))
-    if not student:
-        raise HTTPException(status_code=404, detail="Student not found.")
-    allowed, message = login_allowed(student["student_id"])
-    if not allowed:
-        raise HTTPException(status_code=403, detail=message)
-    return _token_body(session_payload(role="student", student=student))
 
 
 @app.get("/api/me")
@@ -372,14 +380,16 @@ async def teacher_face_attendance(
     unknown_faces = 0
     roster = _subject_roster(session, subject_id)
     try:
-        from src.pipelines.face_pipeline import match_faces
+        from src.pipelines.face_pipeline import predict_attendance
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Face models are not available: {exc}") from exc
+    roster_ids = {int(row["student_id"]) for row in roster}
     for photo in photos:
         img = _image_to_np(await photo.read())
-        detected, num_faces = match_faces(img, roster, max_side=960, upsample=1)
-        unknown_faces += max(0, num_faces - len(detected))
-        present.update({int(sid): True for sid in detected})
+        detected, _all_ids, num_faces = predict_attendance(img)
+        matched = {int(sid): True for sid in detected if int(sid) in roster_ids}
+        unknown_faces += max(0, num_faces - len(matched))
+        present.update(matched)
     present_ids = [int(sid) for sid in present]
     absent_ids = [int(row["student_id"]) for row in roster if int(row["student_id"]) not in present]
     return {
@@ -442,15 +452,6 @@ def teacher_confirm_attendance(body: AttendanceConfirmIn, session: dict = Depend
     else:
         saved = local.add_attendance(logs)
     return {"saved": len(saved or []), "timestamp": stamp}
-
-
-@app.get("/api/student/directory")
-def student_directory():
-    if _cloud():
-        rows = cloud.get_all_students("student_id, name") or []
-    else:
-        rows = local.list_students()
-    return [sanitize_student(row) for row in rows]
 
 
 @app.get("/api/student/subjects")

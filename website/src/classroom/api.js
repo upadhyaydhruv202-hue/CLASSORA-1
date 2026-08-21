@@ -21,7 +21,10 @@ async function request(path, { method = "GET", body, form, auth = true, timeoutM
     res = await fetch(`${API_BASE}${path}`, { method, headers, body: payload, signal: controller?.signal });
   } catch (err) {
     if (err?.name === "AbortError") {
-      throw new Error("That request took too long. The voice model may still be starting — wait 15 seconds and try once more.");
+      if (String(path).includes("voice") || String(path).includes("/register")) {
+        throw new Error("Voice processing took too long. The voice model loads on first use — wait a few seconds and try once more.");
+      }
+      throw new Error("That request took too long. Confirm the API is running on port 8000, then try again.");
     }
     throw err;
   } finally {
@@ -56,17 +59,15 @@ export const api = {
   studentFace: (file) => {
     const form = new FormData();
     form.append("face", file);
-    return request("/api/auth/student/face", { method: "POST", form, auth: false });
+    return request("/api/auth/student/face", { method: "POST", form, auth: false, timeoutMs: 45000 });
   },
   studentRegister: ({ name, face, voice }) => {
     const form = new FormData();
     form.append("name", name);
     if (face) form.append("face", face);
     if (voice) form.append("voice", voice);
-    return request("/api/auth/student/register", { method: "POST", form, auth: false });
+    return request("/api/auth/student/register", { method: "POST", form, auth: false, timeoutMs: 120000 });
   },
-  studentQuick: (student_id) =>
-    request(`/api/auth/student/quick?student_id=${student_id}`, { method: "POST", auth: false }),
   teacherSubjects: () => request("/api/teacher/subjects"),
   createSubject: (body) => request("/api/teacher/subjects", { method: "POST", body }),
   teacherAttendance: () => request("/api/teacher/attendance"),
@@ -81,10 +82,9 @@ export const api = {
     const form = new FormData();
     form.append("subject_id", subjectId);
     form.append("audio", file);
-    return request("/api/teacher/attendance/voice", { method: "POST", form, timeoutMs: 20000 });
+    return request("/api/teacher/attendance/voice", { method: "POST", form, timeoutMs: 120000 });
   },
   confirmAttendance: (body) => request("/api/teacher/attendance/confirm", { method: "POST", body }),
-  studentDirectory: () => request("/api/student/directory", { auth: false }),
   studentSubjects: () => request("/api/student/subjects"),
   enroll: (subject_code) => request("/api/student/enroll", { method: "POST", body: { subject_code } }),
   unenroll: (id) => request(`/api/student/subjects/${id}`, { method: "DELETE" }),
