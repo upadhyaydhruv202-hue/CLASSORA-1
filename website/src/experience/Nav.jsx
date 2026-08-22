@@ -112,8 +112,8 @@ export default function Nav() {
     >
       <div className="cine-nav-inner">
         <a href="#experience" className="cine-nav-brand justify-self-start no-underline" data-cursor="HOME">
-          <span className="block text-[13px] font-extrabold tracking-[0.22em] text-[#0F172A]">CLASSORA</span>
-          <span className="mt-0.5 block font-mono text-[9px] tracking-[0.18em] text-[#64748B]">Learn. Connect. Evolve.</span>
+          <span className="block text-[13px] font-extrabold tracking-[0.22em] text-[#E8F1FF]">CLASSORA</span>
+          <span className="mt-0.5 block font-mono text-[9px] tracking-[0.18em] text-[#67E8F9]">Learn. Connect. Evolve.</span>
         </a>
 
         <nav className="cine-nav-links" aria-label="Primary">

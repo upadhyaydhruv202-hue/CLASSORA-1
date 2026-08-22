@@ -41,14 +41,16 @@ export default function Loading({ onDone }) {
       const p = Math.min((now - t0) / 700, 1);
       const n = Math.round(p * 100);
       setPct(n);
-      if (p < 0.34) setPhase("Loading CLASSORA");
-      else if (p < 0.86) setPhase(`Loading ${n}%`);
+      if (p < 0.22) setPhase("Loading CLASSORA");
+      else if (p < 0.48) setPhase("Loading Digital Twin");
+      else if (p < 0.78) setPhase("Initializing risk model");
+      else if (p < 0.92) setPhase(`Loading ${n}%`);
       else setPhase("Ready");
 
       if (ctx && cvs) {
         ctx.clearRect(0, 0, cvs.width, cvs.height);
         const e = 1 - Math.pow(1 - p, 2.4);
-        ctx.fillStyle = "rgba(37,99,235,0.85)";
+        ctx.fillStyle = "rgba(34,211,238,0.85)";
         dots.forEach((d, i) => {
           const x = d.x + (d.tx - d.x) * e;
           const y = d.y + (d.ty - d.y) * e;
@@ -58,7 +60,7 @@ export default function Loading({ onDone }) {
           ctx.fill();
         });
         ctx.globalAlpha = e * 0.35;
-        ctx.strokeStyle = "#2563EB";
+        ctx.strokeStyle = "#22D3EE";
         ctx.beginPath();
         ctx.arc(cvs.width / 2, cvs.height / 2, 88, 0, Math.PI * 2);
         ctx.stroke();
@@ -95,7 +97,7 @@ export default function Loading({ onDone }) {
       <canvas ref={canvas} aria-hidden />
       <div className="cine-load-copy">
         <p className="cine-kicker">CLASSORA</p>
-        <p className="mt-6 font-mono text-[13px] tracking-[0.28em] text-[#0F172A]">{phase}</p>
+        <p className="mt-6 font-mono text-[13px] tracking-[0.28em] text-[#E8F1FF]">{phase}</p>
         <div className="cine-load-bar" aria-hidden>
           <i style={{ width: `${pct}%` }} />
         </div>

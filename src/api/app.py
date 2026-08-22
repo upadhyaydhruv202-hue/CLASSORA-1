@@ -300,14 +300,14 @@ async def student_register(
 @app.post("/api/auth/student/face")
 async def student_face_login(face: UploadFile = File(...)):
     try:
-        from src.pipelines.face_pipeline import predict_attendance
+        from src.pipelines.face_pipeline import LOGIN_THRESHOLD, predict_attendance
 
         img = _image_to_np(await face.read())
         if _cloud():
             roster = cloud.get_all_students("student_id, name, face_embedding") or []
         else:
             roster = local.read_db()["students"]
-        detected, _all_ids, num_faces = predict_attendance(img)
+        detected, _all_ids, num_faces = predict_attendance(img, threshold=LOGIN_THRESHOLD)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Face scan failed: {exc}") from exc
     if num_faces == 0:

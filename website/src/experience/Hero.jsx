@@ -6,7 +6,7 @@ const ease = [0.22, 1, 0.36, 1];
 
 const signals = ["Face attendance", "Voice match", "Human review"];
 
-export default function Hero() {
+export default function Hero({ metrics, pred }) {
   const prefersReduce = useReducedMotion();
   const [toggled, setToggled] = useState(false);
 
@@ -27,6 +27,7 @@ export default function Hero() {
       transition: skip ? { duration: 0 } : { duration: 0.5, ease },
     },
   };
+  const ringColor = pred.band.includes("HIGH") ? "#f87171" : pred.band.includes("NEEDS") ? "#fbbf24" : "#34d399";
 
   return (
     <section id="experience" className="cine-section cine-hero">
@@ -41,7 +42,7 @@ export default function Hero() {
           },
         }}
       >
-        <div className="cine-hero-copy cine-span-5">
+        <div className="cine-hero-copy">
           <motion.p className="cine-kicker" variants={item}>
             AI attendance and student success
           </motion.p>
@@ -53,6 +54,24 @@ export default function Hero() {
           <motion.p className="cine-body cine-hero-body" variants={item}>
             Teachers capture a class photo or a short recording. CLASSORA matches the enrolled roster, then explains support-risk for a counsellor to review — not a diagnosis, and never automatic.
           </motion.p>
+          <motion.div className="cine-hero-hud" variants={item}>
+            <div className="cine-hud-chip">
+              <span>Attendance</span>
+              <strong>{metrics.attendance}%</strong>
+            </div>
+            <div className="cine-hud-chip">
+              <span>Academic</span>
+              <strong>{metrics.academic}%</strong>
+            </div>
+            <div className="cine-hud-chip">
+              <span>Assignments</span>
+              <strong>{metrics.assignments}%</strong>
+            </div>
+            <div className="cine-hud-risk" style={{ color: ringColor }}>
+              <strong>{pred.score}%</strong>
+              <span>{pred.band}</span>
+            </div>
+          </motion.div>
           <motion.div className="cine-hero-actions" variants={item}>
             <motion.a
               href={APP_URL}

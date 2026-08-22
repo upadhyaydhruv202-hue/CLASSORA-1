@@ -22,7 +22,11 @@ _dlib_models = None
 _trained_model = None
 
 FACE_SIZE = 128
-MATCH_THRESHOLD = 0.6
+# dlib 128-d: 0.6 is a same-person *verification* cutoff. Login is open-set
+# (this face vs everyone enrolled). With one student, SVM always names them,
+# so a loose 0.6 lets strangers in. Use nearest-neighbor + a tighter login gate.
+MATCH_THRESHOLD = 0.55
+LOGIN_THRESHOLD = 0.48
 
 
 def as_face_vector(value):
@@ -127,42 +131,49 @@ def train_classifier():
     return bool(model_data)
 
 
-def predict_attendance(class_image_np):
+def nearest_face_match(encoding, X_train, y_train):
+    """Return (student_id, L2 distance) for the closest enrolled embedding."""
+    probe = np.asarray(encoding, dtype=np.float64).reshape(-1)
+    best_id = None
+    best_dist = float("inf")
+    for vec, sid in zip(X_train, y_train):
+        stored = np.asarray(vec, dtype=np.float64).reshape(-1)
+        if stored.size != probe.size:
+            continue
+        dist = float(np.linalg.norm(stored - probe))
+        if dist < best_dist:
+            best_dist = dist
+            best_id = int(sid)
+    return best_id, best_dist
+
+
+def predict_attendance(class_image_np, threshold=MATCH_THRESHOLD):
     encodings = get_face_embeddings(class_image_np)
 
     detected_student = {}
 
     model_data = get_trained_model()
 
-    if not model_data:
+    if not model_data or model_data == 0:
         return detected_student, [], len(encodings)
 
-    clf = model_data["clf"]
     X_train = model_data["X"]
     y_train = model_data["y"]
+    all_students = sorted(list(set(int(sid) for sid in y_train)))
 
-    all_students = sorted(list(set(y_train)))
+    if not X_train:
+        return detected_student, all_students, len(encodings)
 
     for encoding in encodings:
-        if len(all_students) >= 2:
-            predicted_id = int(clf.predict([encoding])[0])
-        else:
-            predicted_id = int(all_students[0])
-
-        student_embedding = X_train[y_train.index(predicted_id)]
-
-        best_match_score = np.linalg.norm(student_embedding - encoding)
-
-        resemblance_threshold = 0.6
-
-        if best_match_score <= resemblance_threshold:
+        predicted_id, best_match_score = nearest_face_match(encoding, X_train, y_train)
+        if predicted_id is not None and best_match_score <= threshold:
             detected_student[predicted_id] = True
     return detected_student, all_students, len(encodings)
 
 
 def match_faces(image_np, known_rows=None, threshold=MATCH_THRESHOLD, max_side=640, upsample=1):
-    """API adapter: original predict_attendance, then optional roster filter."""
-    detected, _all_ids, num_faces = predict_attendance(image_np)
+    """API adapter: nearest-neighbor face match, then optional roster filter."""
+    detected, _all_ids, num_faces = predict_attendance(image_np, threshold=threshold)
     if known_rows:
         allowed = set()
         for row in known_rows:

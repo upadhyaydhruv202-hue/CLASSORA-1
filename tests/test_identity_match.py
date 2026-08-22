@@ -52,26 +52,33 @@ class FaceVectorTests(unittest.TestCase):
 
 
 class FaceSvmTests(unittest.TestCase):
-    def test_linear_svm_and_l2_gate(self):
-        """Source: SVC linear + L2 <= 0.6 against the predicted student's embedding."""
+    def test_nearest_neighbor_rejects_unknown_when_only_one_enrolled(self):
+        """A lone enrolled face must not claim every new person (login → register)."""
         try:
-            from sklearn.svm import SVC
+            from src.pipelines.face_pipeline import LOGIN_THRESHOLD, nearest_face_match
         except Exception:
-            self.skipTest("sklearn is not installed")
-        rng = np.random.default_rng(0)
-        a = rng.normal(size=128)
-        a = a / np.linalg.norm(a)
-        b = rng.normal(size=128)
-        b = b / np.linalg.norm(b)
-        clf = SVC(kernel="linear", probability=True, class_weight="balanced")
-        clf.fit([a, b], [1, 2])
-        predicted = int(clf.predict([a])[0])
-        self.assertEqual(predicted, 1)
-        train = {1: a, 2: b}
-        score = float(np.linalg.norm(train[predicted] - a))
-        self.assertLessEqual(score, 0.6)
-        far = float(np.linalg.norm(a - b))
-        self.assertGreater(far, 0.6)
+            self.skipTest("face pipeline is not importable")
+        rng = np.random.default_rng(1)
+        enrolled = rng.normal(size=128)
+        enrolled = enrolled / np.linalg.norm(enrolled)
+        stranger = rng.normal(size=128)
+        stranger = stranger / np.linalg.norm(stranger)
+        sid, dist = nearest_face_match(stranger, [enrolled], [7])
+        self.assertEqual(sid, 7)
+        self.assertGreater(dist, LOGIN_THRESHOLD)
+
+    def test_nearest_neighbor_accepts_same_face(self):
+        try:
+            from src.pipelines.face_pipeline import LOGIN_THRESHOLD, nearest_face_match
+        except Exception:
+            self.skipTest("face pipeline is not importable")
+        rng = np.random.default_rng(2)
+        enrolled = rng.normal(size=128)
+        enrolled = enrolled / np.linalg.norm(enrolled)
+        probe = enrolled + rng.normal(size=128) * 0.01
+        sid, dist = nearest_face_match(probe, [enrolled], [7])
+        self.assertEqual(sid, 7)
+        self.assertLessEqual(dist, LOGIN_THRESHOLD)
 
 
 if __name__ == "__main__":

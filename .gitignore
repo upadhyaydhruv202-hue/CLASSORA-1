@@ -60,3 +60,6 @@ data/
 *.onnx
 *.bin
 *.dat
+
+# Original TRELLIS/Meshy GLBs (76MB+). Web uses the optimized copy in website/public/models/
+website/models-source/
