@@ -183,6 +183,7 @@ export default function ClassroomApp() {
     clearSession();
     setSession(null);
     setPortal(null);
+    setError("");
   };
 
   return (
@@ -191,13 +192,13 @@ export default function ClassroomApp() {
         {error && <Notice title="Something went wrong" body={error} tone="danger" />}
         {!session && !portal && <HomePortal setPortal={setPortal} />}
         {!session && portal === "teacher" && (
-          <TeacherAuth health={health} busy={busy} setBusy={setBusy} setError={setError} signIn={signIn} onBack={() => setPortal(null)} />
+          <TeacherAuth health={health} busy={busy} setBusy={setBusy} setError={setError} signIn={signIn} onBack={() => { setError(""); setPortal(null); }} />
         )}
         {!session && portal === "staff" && (
-          <StaffAuth health={health} busy={busy} setBusy={setBusy} setError={setError} signIn={signIn} onBack={() => setPortal(null)} />
+          <StaffAuth health={health} busy={busy} setBusy={setBusy} setError={setError} signIn={signIn} onBack={() => { setError(""); setPortal(null); }} />
         )}
         {!session && portal === "student" && (
-          <StudentAuth health={health} busy={busy} setBusy={setBusy} setError={setError} signIn={signIn} onBack={() => setPortal(null)} />
+          <StudentAuth health={health} busy={busy} setBusy={setBusy} setError={setError} signIn={signIn} onBack={() => { setError(""); setPortal(null); }} />
         )}
         {session?.user_role === "teacher" && <TeacherDesk session={session} health={health} setError={setError} onLogout={logout} />}
         {session?.user_role === "student" && <StudentDesk session={session} setError={setError} onLogout={logout} />}
@@ -322,22 +323,40 @@ function TeacherAuth({ health, busy, setBusy, setError, signIn, onBack }) {
 
 function StaffAuth({ health, busy, setBusy, setError, signIn, onBack }) {
   const [mode, setMode] = useState("login");
-  const [form, setForm] = useState({ username: "", password: "", name: "", role: "counsellor" });
+  const [form, setForm] = useState({ username: "", password: "", name: "", role: "counsellor", token: "", confirm_password: "" });
+  const [notice, setNotice] = useState("");
   const submit = async (event) => {
     event.preventDefault();
     setBusy(true);
     setError("");
+    setNotice("");
     try {
-      const payload = mode === "login" ? await api.staffLogin(form) : await api.staffRegister(form);
-      signIn(payload);
+      if (mode === "login") signIn(await api.staffLogin(form));
+      else if (mode === "register") signIn(await api.staffRegister(form));
+      else {
+        const res = await api.staffActivate({
+          username: form.username,
+          token: form.token,
+          password: form.password,
+          confirm_password: form.confirm_password,
+        });
+        setNotice(res.detail);
+        setMode("login");
+      }
     } catch (err) {
       setError(err.message);
     } finally {
       setBusy(false);
     }
   };
+  const titles = {
+    login: { kicker: "Staff access", title: "Login using password", caption: "Counsellor, administrator, faculty, and mentor workspaces." },
+    register: { kicker: "Staff onboarding", title: "Register staff profile", caption: "Create a counsellor, administrator, faculty, or mentor account." },
+    activate: { kicker: "Account activation", title: "Activate staff invitation", caption: "Use the one-time code from an administrator. Codes expire after 7 days." },
+  }[mode];
   return (
-    <AuthCard kicker="Staff access" title={mode === "login" ? "Login using password" : "Register staff profile"} caption="Counsellor, administrator, faculty, and mentor workspaces." onBack={onBack}>
+    <AuthCard kicker={titles.kicker} title={titles.title} caption={titles.caption} onBack={onBack}>
+      {notice && <Notice title="Done" body={notice} tone="ok" />}
       <form onSubmit={submit}>
         {mode === "register" && (
           <>
@@ -353,16 +372,34 @@ function StaffAuth({ health, busy, setBusy, setError, signIn, onBack }) {
             </label>
           </>
         )}
+        {mode === "activate" && <Field label="Activation code" value={form.token} onChange={(e) => setForm({ ...form, token: e.target.value })} />}
         <Field label="Enter username" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
-        <Field label="Enter password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+        {mode !== "activate" && <Field label="Enter password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />}
+        {mode === "activate" && (
+          <>
+            <Field label="Create password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+            <Field label="Confirm password" type="password" value={form.confirm_password} onChange={(e) => setForm({ ...form, confirm_password: e.target.value })} />
+          </>
+        )}
         <hr className="co-hr" />
         <div className="grid gap-3 sm:grid-cols-2">
-          <button disabled={busy} className="co-btn co-btn-stretch">{mode === "login" ? "Login" : "Register now"}</button>
-          <button type="button" className="co-btn co-btn-stretch" onClick={() => setMode(mode === "login" ? "register" : "login")}>
-            {mode === "login" ? "Register instead" : "Login instead"}
+          <button disabled={busy} className="co-btn co-btn-stretch">
+            {mode === "login" ? "Login" : mode === "register" ? "Register now" : "Activate account"}
+          </button>
+          <button
+            type="button"
+            className="co-btn co-btn-stretch"
+            onClick={() => setMode(mode === "register" ? "login" : mode === "activate" ? "login" : "register")}
+          >
+            {mode === "register" || mode === "activate" ? "Login instead" : "Register instead"}
           </button>
         </div>
       </form>
+      {mode === "login" && (
+        <div className="mt-3">
+          <button type="button" className="co-btn co-btn-stretch co-btn-secondary" onClick={() => setMode("activate")}>Activate invitation</button>
+        </div>
+      )}
     </AuthCard>
   );
 }

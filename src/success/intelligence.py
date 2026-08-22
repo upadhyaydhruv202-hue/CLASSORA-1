@@ -29,6 +29,29 @@ def _public_student_fields(row):
     return {"student_id": row.get("student_id"), "name": row.get("name")}
 
 
+def _student_id_set(students):
+    out = set()
+    for row in students or []:
+        try:
+            out.add(int(row.get("student_id")))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _owned(rows, allowed):
+    if allowed is None:
+        return list(rows or [])
+    out = []
+    for row in rows or []:
+        try:
+            if int(row.get("student_id")) in allowed:
+                out.append(row)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 def _real_bundle(teacher_id=None, student_id=None):
     extra = {}
     if student_id is not None:
@@ -74,14 +97,15 @@ def _real_bundle(teacher_id=None, student_id=None):
             students = [s for s in students if s.get("student_id") in allowed]
             enrollments = [e for e in enrollments if (e.get("subjects") or {}).get("teacher_id") == teacher_id]
             logs = [r for r in logs if (r.get("subjects") or {}).get("teacher_id") == teacher_id]
+        owned = _student_id_set(students) if teacher_id is not None else None
         return {
             "students": students,
             "enrollments": enrollments,
             "logs": logs,
-            "academic": store.select("academic_records", **extra),
-            "lms": store.select("lms_events", **extra),
-            "cases": store.select("intervention_cases", **extra),
-            "recommendations": store.select("intervention_recommendations", **extra),
+            "academic": _owned(store.select("academic_records", **extra), owned),
+            "lms": _owned(store.select("lms_events", **extra), owned),
+            "cases": _owned(store.select("intervention_cases", **extra), owned),
+            "recommendations": _owned(store.select("intervention_recommendations", **extra), owned),
             "demo": False,
         }
 
@@ -114,10 +138,10 @@ def _real_bundle(teacher_id=None, student_id=None):
             "students": students,
             "enrollments": enrollments,
             "logs": logs,
-            "academic": [],
-            "lms": [],
-            "cases": [],
-            "recommendations": [],
+            "academic": store.select("academic_records", **extra),
+            "lms": store.select("lms_events", **extra),
+            "cases": store.select("intervention_cases", **extra),
+            "recommendations": store.select("intervention_recommendations", **extra),
             "demo": False,
         }
 
@@ -142,14 +166,15 @@ def _real_bundle(teacher_id=None, student_id=None):
         students = [s for s in students if s.get("student_id") in allowed]
         enrollments = [e for e in enrollments if (e.get("subjects") or {}).get("teacher_id") == teacher_id]
         logs = [r for r in logs if (r.get("subjects") or {}).get("teacher_id") == teacher_id]
+    owned = _student_id_set(students) if teacher_id else None
     return {
         "students": students,
         "enrollments": enrollments,
         "logs": logs,
-        "academic": store.select("academic_records"),
-        "lms": store.select("lms_events"),
-        "cases": store.select("intervention_cases"),
-        "recommendations": store.select("intervention_recommendations"),
+        "academic": _owned(store.select("academic_records"), owned),
+        "lms": _owned(store.select("lms_events"), owned),
+        "cases": _owned(store.select("intervention_cases"), owned),
+        "recommendations": _owned(store.select("intervention_recommendations"), owned),
         "demo": False,
     }
 

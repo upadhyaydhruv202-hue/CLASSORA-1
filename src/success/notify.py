@@ -21,7 +21,10 @@ def for_recipient(*, role, recipient_id, limit=30):
     for r in rows:
         if r.get("recipient_role") and r.get("recipient_role") != role:
             continue
-        if rid and r.get("recipient_id") not in (None, "", rid):
+        if role in ("counsellor", "administrator", "faculty", "mentor"):
+            if r.get("recipient_id") not in (None, "", rid, "caseload", "ops"):
+                continue
+        elif rid and r.get("recipient_id") not in (None, "", rid):
             continue
         out.append(r)
     out.sort(key=lambda x: str(x.get("created_at") or ""), reverse=True)

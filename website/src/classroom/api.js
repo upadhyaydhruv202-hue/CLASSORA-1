@@ -100,12 +100,29 @@ export const api = {
   shareSubject: (code) => request(`/api/teacher/share/${encodeURIComponent(code)}`),
   workspace: (force = false) => loadWorkspace(force),
   sendHelp: (body) => request("/api/success/help", { method: "POST", body }),
+  ackHelp: (body) => request("/api/success/help/ack", { method: "POST", body }),
   bookAppointment: (body) => request("/api/success/appointment", { method: "POST", body }),
+  connectAppointment: (body) => request("/api/success/appointment/connect", { method: "POST", body }),
   submitRecommend: (body) => request("/api/success/recommend", { method: "POST", body }),
   createCase: (body) => request("/api/success/case", { method: "POST", body }),
   recordOutcome: (body) => request("/api/success/outcome", { method: "POST", body }),
   askAssistant: (body) => request("/api/success/assistant", { method: "POST", body }),
   staffInvite: (body) => request("/api/staff/invite", { method: "POST", body }),
+  staffActivate: (body) => request("/api/auth/staff/activate", { method: "POST", body, auth: false }),
+  staffInvites: () => request("/api/staff/invites"),
+  successSearch: (q) => request(`/api/success/search?q=${encodeURIComponent(q || "")}`),
+  successReport: () => request("/api/success/report"),
+  successSettings: () => request("/api/success/settings"),
+  saveSettings: (body) => request("/api/success/settings", { method: "POST", body }),
+  successImport: (file, kind = "academic") => {
+    const form = new FormData();
+    form.append("kind", kind);
+    form.append("file", file);
+    return request("/api/success/import", { method: "POST", form, timeoutMs: 60000 });
+  },
+  createTask: (body) => request("/api/success/task", { method: "POST", body }),
+  completeTask: (body) => request("/api/success/task/done", { method: "POST", body }),
+  resolveAlert: (body) => request("/api/success/alert/resolve", { method: "POST", body }),
   mentorshipList: () => request("/api/mentorship"),
   mentorshipAssign: (body) => request("/api/mentorship/assign", { method: "POST", body }),
   mentorshipOne: (id) => request(`/api/mentorship/${id}`),
@@ -114,9 +131,11 @@ export const api = {
   mentorshipSession: (id, body) => request(`/api/mentorship/${id}/sessions`, { method: "POST", body }),
   mentorshipFeedback: (id, body) => request(`/api/mentorship/${id}/feedback`, { method: "POST", body }),
   mentorshipReassign: (id) => request(`/api/mentorship/${id}/reassign`, { method: "POST" }),
+  mentorshipClose: (id) => request(`/api/mentorship/${id}/close`, { method: "POST" }),
   mentorshipSuspend: (id) => request(`/api/mentorship/${id}/suspend`, { method: "POST" }),
   createComplaint: (body) => request("/api/moderation/complaints", { method: "POST", body }),
   submitAppeal: (body) => request("/api/moderation/appeals", { method: "POST", body }),
+  reviewAppeal: (body) => request("/api/moderation/appeals/review", { method: "POST", body }),
   openComplaint: (id) => request(`/api/moderation/complaints/${id}/open`, { method: "POST" }),
   decideComplaint: (id, body) => request(`/api/moderation/complaints/${id}/decide`, { method: "POST", body }),
 };

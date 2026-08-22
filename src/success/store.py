@@ -14,10 +14,15 @@ _LOCK = threading.Lock()
 _PATH = Path(__file__).resolve().parents[2] / "data" / "success_store.json"
 _CLOUD_ONLY = {"mentorships", "complaints", "student_moderation_status", "mentorship_messages", "appeals"}
 _AVAIL = {}
+_LAST_ERROR = {}
 
 
 def _now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def last_error(table: str) -> str:
+    return str(_LAST_ERROR.get(table) or "")
 
 
 def _empty():
@@ -41,14 +46,17 @@ def _dump(data):
 def available(table: str) -> bool:
     if not is_supabase_configured():
         return table not in _CLOUD_ONLY
-    if table in _AVAIL:
-        return _AVAIL[table]
+    if _AVAIL.get(table) is True:
+        return True
     try:
         supabase.table(table).select("*").limit(1).execute()
         _AVAIL[table] = True
-    except Exception:
+        _LAST_ERROR.pop(table, None)
+        return True
+    except Exception as exc:
+        _LAST_ERROR[table] = str(exc)
         _AVAIL[table] = False
-    return _AVAIL[table]
+        return False
 
 
 def insert(table: str, row: dict):
@@ -59,11 +67,13 @@ def insert(table: str, row: dict):
         except (TypeError, ValueError):
             pass
     if is_supabase_configured():
-        if not available(table):
-            return None
         try:
-            return supabase.table(table).insert(row).execute().data
-        except Exception:
+            data = supabase.table(table).insert(row).execute().data
+            _AVAIL[table] = True
+            _LAST_ERROR.pop(table, None)
+            return data
+        except Exception as exc:
+            _LAST_ERROR[table] = str(exc)
             return None
     if table in _CLOUD_ONLY:
         return None
@@ -82,16 +92,16 @@ def insert(table: str, row: dict):
 
 def select(table: str, **eq):
     if is_supabase_configured():
-        if table in _AVAIL and not _AVAIL[table]:
-            return []
         try:
             q = supabase.table(table).select("*")
             for k, v in eq.items():
                 q = q.eq(k, v)
             rows = q.execute().data or []
             _AVAIL[table] = True
+            _LAST_ERROR.pop(table, None)
             return rows
-        except Exception:
+        except Exception as exc:
+            _LAST_ERROR[table] = str(exc)
             _AVAIL[table] = False
             return []
     if table in _CLOUD_ONLY:
@@ -108,14 +118,16 @@ def select(table: str, **eq):
 
 def update(table: str, match: dict, values: dict):
     if is_supabase_configured():
-        if not available(table):
-            return None
         try:
             q = supabase.table(table).update(values)
             for k, v in match.items():
                 q = q.eq(k, v)
-            return q.execute().data
-        except Exception:
+            data = q.execute().data
+            _AVAIL[table] = True
+            _LAST_ERROR.pop(table, None)
+            return data
+        except Exception as exc:
+            _LAST_ERROR[table] = str(exc)
             return None
     if table in _CLOUD_ONLY:
         return None

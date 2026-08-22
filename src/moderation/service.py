@@ -804,6 +804,11 @@ def submit_appeal(*, student_id, reason, explanation, evidence_note=None, compla
         actor_role="student", actor_ref=student_id, action="APPEAL_SUBMITTED",
         complaint_id=complaint_id, student_id=int(student_id), reason=text[:500],
     )
+    try:
+        from src.success.notify import notify
+        notify(role="administrator", recipient_id="ops", title="New student appeal", body="Open Complaint Management to review the appeal.")
+    except Exception:
+        pass
     return row[0], "Appeal submitted to administration."
 
 
@@ -845,6 +850,14 @@ def review_appeal(*, appeal_id, admin_staff_id, admin_role, decision: str, admin
         return None, "Appeal not found."
     student_id = int(row["student_id"])
     note = (admin_note or "").strip() or decision
+
+    def _ping(text):
+        try:
+            from src.success.notify import notify
+            notify(role="student", recipient_id=student_id, title="Appeal reviewed", body=text)
+        except Exception:
+            pass
+
     if decision == "reject":
         store.update("student_appeals", {"id": row["id"]}, {
             "status": "REJECTED", "admin_note": note[:2000], "reviewed_at": _now().isoformat(),
@@ -853,7 +866,9 @@ def review_appeal(*, appeal_id, admin_staff_id, admin_role, decision: str, admin
             actor_role="administrator", actor_ref=admin_staff_id, action="APPEAL_REVIEWED",
             student_id=student_id, reason=note, metadata={"decision": "reject"},
         )
-        return True, "Appeal rejected. Existing restriction is maintained."
+        msg = "Appeal rejected. Existing restriction is maintained."
+        _ping(msg)
+        return True, msg
     if decision == "accept" or decision == "restore":
         _set_status(student_id, "ACTIVE", admin_staff_id=admin_staff_id, reason=note,
                     action_name="BAN_REVOKED", complaint_id=row.get("complaint_id"))
@@ -864,7 +879,9 @@ def review_appeal(*, appeal_id, admin_staff_id, admin_role, decision: str, admin
             actor_role="administrator", actor_ref=admin_staff_id, action="APPEAL_REVIEWED",
             student_id=student_id, reason=note, new_status="ACTIVE", metadata={"decision": "accept"},
         )
-        return True, "Appeal accepted. Account restored."
+        msg = "Appeal accepted. Account restored."
+        _ping(msg)
+        return True, msg
     if decision == "reduce":
         hours = int(duration_hours or 24)
         until = (_now() + timedelta(hours=hours)).isoformat()
@@ -877,7 +894,9 @@ def review_appeal(*, appeal_id, admin_staff_id, admin_role, decision: str, admin
             actor_role="administrator", actor_ref=admin_staff_id, action="APPEAL_REVIEWED",
             student_id=student_id, reason=note, new_status="RESTRICTED", metadata={"decision": "reduce"},
         )
-        return True, f"Appeal reviewed. Restriction reduced to {hours} hours."
+        msg = f"Appeal reviewed. Restriction reduced to {hours} hours."
+        _ping(msg)
+        return True, msg
     if decision == "maintain":
         store.update("student_appeals", {"id": row["id"]}, {
             "status": "REJECTED", "admin_note": note[:2000], "reviewed_at": _now().isoformat(),
@@ -886,7 +905,9 @@ def review_appeal(*, appeal_id, admin_staff_id, admin_role, decision: str, admin
             actor_role="administrator", actor_ref=admin_staff_id, action="APPEAL_REVIEWED",
             student_id=student_id, reason=note, metadata={"decision": "maintain"},
         )
-        return True, "Existing restriction maintained."
+        msg = "Existing restriction maintained."
+        _ping(msg)
+        return True, msg
     return None, "Unknown appeal decision."
 
 

@@ -198,7 +198,10 @@ def teacher_register(body: TeacherAuthIn):
 
 @app.post("/api/auth/staff/login")
 def staff_login(body: StaffAuthIn):
-    staff = cloud_staff_login(body.username, body.password) if _cloud() else local.staff_login(body.username, body.password)
+    if _cloud():
+        staff = cloud_staff_login(body.username, body.password)
+    else:
+        staff = local.staff_login(body.username, body.password) or cloud_staff_login(body.username, body.password)
     if not staff:
         raise HTTPException(status_code=401, detail="Invalid staff credentials.")
     role = staff.get("role") or "counsellor"
@@ -506,6 +509,8 @@ def student_risk(session: dict = Depends(require_role("student"))):
 
 @app.get("/api/success/hub")
 def success_hub(session: dict = Depends(require_session)):
+    if session.get("user_role") == "student":
+        raise HTTPException(status_code=403, detail="Staff only.")
     teacher_id = (session.get("teacher_data") or {}).get("teacher_id")
     bundle = load_bundle(session, teacher_id=teacher_id)
     ranked = profile_map(bundle)
@@ -520,8 +525,34 @@ def success_hub(session: dict = Depends(require_session)):
 
 @app.get("/api/success/student/{student_id}")
 def success_student(student_id: int, session: dict = Depends(require_session)):
-    bundle = load_bundle(session, teacher_id=(session.get("teacher_data") or {}).get("teacher_id"))
-    return student_360(bundle, student_id)
+    role = session.get("user_role")
+    if role == "student":
+        own = (session.get("student_data") or {}).get("student_id")
+        try:
+            if int(own) != int(student_id):
+                raise HTTPException(status_code=403, detail="You can only view your own record.")
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=403, detail="You can only view your own record.")
+        bundle = load_bundle(session, student_id=int(own))
+        profile = student_360(bundle, int(own))
+        if not profile:
+            raise HTTPException(status_code=404, detail="Student record not found.")
+        return profile
+    teacher_id = (session.get("teacher_data") or {}).get("teacher_id")
+    bundle = load_bundle(session, teacher_id=teacher_id)
+    if teacher_id is not None:
+        allowed = set()
+        for row in bundle.get("students") or []:
+            try:
+                allowed.add(int(row.get("student_id")))
+            except (TypeError, ValueError):
+                continue
+        if int(student_id) not in allowed:
+            raise HTTPException(status_code=403, detail="Student is not in your roster.")
+    profile = student_360(bundle, student_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Student record not found.")
+    return profile
 
 
 def _subject_roster(session, subject_id: int):

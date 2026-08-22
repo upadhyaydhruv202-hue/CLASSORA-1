@@ -173,7 +173,7 @@ def _load(mentor_staff_id):
         return 0
 
 
-def _pick_mentor(student_id):
+def _pick_mentor(student_id, prefer_staff_id=None):
     staff = store.select("staff_users") or []
     profiles = {int(p["staff_id"]): p for p in (store.select("mentor_profiles") or []) if p.get("staff_id") is not None}
     blocked = _rejected_pairs(student_id)
@@ -195,6 +195,22 @@ def _pick_mentor(student_id):
         if sid in blocked:
             continue
         candidates.append((load, sid, s, prof))
+    if prefer_staff_id is not None:
+        try:
+            preferred = int(prefer_staff_id)
+        except (TypeError, ValueError):
+            preferred = None
+        if preferred is not None:
+            for _load_n, sid, s, _prof in candidates:
+                if sid == preferred:
+                    return sid
+            for s in staff:
+                sid = s.get("staff_id")
+                if sid is None:
+                    continue
+                sid = int(sid)
+                if sid == preferred and s.get("role") in ELIGIBLE_MENTOR_ROLES and sid not in blocked:
+                    return sid
     if not candidates:
         return None
     candidates.sort(key=lambda x: (x[0], x[1]))
@@ -218,7 +234,7 @@ def _attendance_context(student_id):
     return band
 
 
-def assign_mentorship(student_id, actor_role, actor_ref, goal=None, risk_band=None, session_state=None):
+def assign_mentorship(student_id, actor_role, actor_ref, goal=None, risk_band=None, session_state=None, prefer_staff_id=None):
     """Counsellor/admin/student-request entry. Never returns mentor or student names."""
     if session_state and _demo(session_state):
         return None, "Demo Mode cannot write anonymous mentorships into production."
@@ -235,9 +251,21 @@ def assign_mentorship(student_id, actor_role, actor_ref, goal=None, risk_band=No
     from src.moderation.service import participation_allowed
     if not participation_allowed(student_id):
         return None, "This student cannot receive a new mentorship while their account is restricted, suspended, or banned."
-    if _open_for_student(student_id):
-        return None, "This student already has an open anonymous mentorship."
-    mentor_id = _pick_mentor(student_id)
+    existing = _open_for_student(student_id)
+    if existing:
+        mid = existing[0].get("mentorship_id")
+        row = _fetch(mid)
+        if prefer_staff_id is not None and row:
+            try:
+                if int(row.get("mentor_staff_id")) != int(prefer_staff_id):
+                    return None, "This student already has a private chat with another mentor."
+            except (TypeError, ValueError):
+                pass
+            view = faculty_view(mid, prefer_staff_id)
+            if view:
+                return view, "Private chat already open. Continue in Anonymous Mentorship."
+        return student_view(mid, student_id), "This student already has an open anonymous mentorship."
+    mentor_id = _pick_mentor(student_id, prefer_staff_id=prefer_staff_id)
     if not mentor_id:
         return None, "No available mentor. Increase faculty capacity or mark a mentor available."
     now = _now()
@@ -328,6 +356,7 @@ def faculty_view(mentorship_id, staff_id):
     payload = {
         "mentorshipId": row["mentorship_id"],
         "anonymousStudentId": row["student_alias"],
+        "anonymousMentorId": row["mentor_alias"],
         "riskLevel": row.get("risk_band") or "Support",
         "counselingGoal": row.get("counseling_goal"),
         "attendanceContext": row.get("attendance_context"),
@@ -407,11 +436,22 @@ def post_message(mentorship_id, body, *, student_id=None, staff_id=None):
     text = (body or "").strip()
     if not text:
         return None, "Message is empty."
-    store.insert("mentorship_messages", {
+    saved = store.insert("mentorship_messages", {
         "mentorship_id": mentorship_id,
         "sender_role": role,
         "body": text[:4000],
     })
+    if not saved:
+        try:
+            saved = supabase.table("mentorship_messages").insert({
+                "mentorship_id": mentorship_id,
+                "sender_role": role,
+                "body": text[:4000],
+            }).execute().data
+        except Exception as exc:
+            return None, f"Could not save the message: {exc}"
+    if not saved:
+        return None, "Could not save the message. Confirm mentorship_messages exists in Supabase."
     return True, "Sent."
 
 
@@ -616,6 +656,33 @@ def admin_overview():
         "activeAnonymous": sum(1 for r in rows if r.get("status") == "ANONYMOUS_ACTIVE"),
     }
     return {"installed": True, "rows": rows, "metrics": metrics}
+
+
+def close_chat(mentorship_id, *, student_id=None, staff_id=None):
+    """End the private thread. Does not reveal names."""
+    row = _authorize_party(mentorship_id, student_id=student_id, staff_id=staff_id)
+    if not row:
+        return None, "Not authorized."
+    if row["status"] in ("REJECTED", "COMPLETED", "SUSPENDED"):
+        return True, "This chat is already closed."
+    _update(mentorship_id, {"status": "COMPLETED", "closed_at": _now().isoformat()})
+    _notify(
+        role="student", student_id=row.get("student_id"), mentorship_id=mentorship_id,
+        title="Private chat closed",
+        body="The anonymous counselling chat was closed. Identities stay hidden.",
+    )
+    _notify(
+        role="mentor", staff_id=row.get("mentor_staff_id"), mentorship_id=mentorship_id,
+        title="Private chat closed",
+        body=f"The chat with {row.get('student_alias')} was closed. Identities stay hidden.",
+    )
+    _audit(
+        "student" if student_id is not None else "mentor",
+        student_id or staff_id,
+        "closed_chat",
+        mentorship_id,
+    )
+    return True, "Private chat closed. Identities stay hidden."
 
 
 def admin_suspend(mentorship_id, actor_ref):
