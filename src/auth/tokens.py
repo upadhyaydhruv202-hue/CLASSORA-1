@@ -37,6 +37,7 @@ def encode_token(session: dict) -> str:
         "teacher": session.get("teacher_data"),
         "student": session.get("student_data"),
         "staff": session.get("staff_data"),
+        "merchant": session.get("merchant_data"),
     }
     body = _b64url(json.dumps(payload, separators=(",", ":"), sort_keys=True, default=str).encode("utf-8"))
     signature = _b64url(hmac.new(_secret(), body.encode("ascii"), hashlib.sha256).digest())
@@ -65,4 +66,5 @@ def decode_token(token: str | None) -> dict | None:
         "teacher_data": payload.get("teacher"),
         "student_data": payload.get("student"),
         "staff_data": payload.get("staff"),
+        "merchant_data": payload.get("merchant"),
     }

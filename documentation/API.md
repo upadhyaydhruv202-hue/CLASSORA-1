@@ -167,6 +167,167 @@ Any signed-in classroom role may **read**. Only **administrators** may create, e
 
 ---
 
+## Institutional anomalies
+
+Authorized roles: **administrator**, **teacher**, **counsellor**. Students, faculty staff, and mentors cannot read these routes. Only administrator/teacher may analyze or change lifecycle. Only administrator may change thresholds.
+
+| Method | Path | Auth | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/institutional-anomalies` | Authorized staff | Query: `severity`, `status`, `section`, `semester`, `course`, `metric`, `cohort_type`, `search`, `sort`, `start`, `end` |
+| GET | `/api/institutional-anomalies/summary` | Authorized staff | Overview counts from stored events |
+| GET | `/api/institutional-anomalies/settings` | Authorized staff | Thresholds + last analysis |
+| PUT | `/api/institutional-anomalies/settings` | Administrator | Configurable min cohort, score, affected %, windows |
+| POST | `/api/institutional-anomalies/analyze` | Administrator or teacher | Recomputes aggregates vs baseline; idempotent for the same window |
+| GET | `/api/institutional-anomalies/{id}` | Authorized staff | Detail + hypotheses + hierarchy |
+| GET | `/api/institutional-anomalies/{id}/timeline` | Authorized staff | Snapshot series |
+| GET | `/api/institutional-anomalies/{id}/evidence` | Authorized staff | Explanation + metric evidence |
+| GET | `/api/institutional-anomalies/{id}/cohort` | Authorized staff | Aggregate impact; student IDs only for administrators |
+| POST | `/api/institutional-anomalies/{id}/acknowledge` | Administrator or teacher | |
+| POST | `/api/institutional-anomalies/{id}/investigate` | Administrator or teacher | |
+| POST | `/api/institutional-anomalies/{id}/resolve` | Administrator or teacher | |
+| POST | `/api/institutional-anomalies/{id}/dismiss` | Administrator or teacher | |
+| POST | `/api/institutional-anomalies/{id}/notes` | Administrator or teacher | `{ note }` |
+| GET | `/api/institutional-anomalies/{id}/notes` | Authorized staff | |
+
+---
+
+## Institutional dropout root-cause
+
+Authorized roles: **administrator** (institution-wide; DEAN/DIRECTOR equivalent) and **teacher** (HOD-equivalent, scoped to taught sections/courses). Students, counsellors, faculty staff, and mentors receive 403. Every route enforces RBAC server-side and writes an `audit_events` row without student names.
+
+Dropout is taken only from `student_academic_outcomes`. There is no department table; `/departments` returns section aggregates plus an unavailable note.
+
+| Method | Path | Auth | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/institutional-dropout/overview` | Admin or teacher | Cards, story, unavailable factors |
+| GET | `/api/institutional-dropout/summary` | Admin or teacher | Cheap workspace summary |
+| GET | `/api/institutional-dropout/settings` | Admin or teacher | Thresholds + last analysis |
+| PUT | `/api/institutional-dropout/settings` | Administrator | Configurable sample-size and bands |
+| POST | `/api/institutional-dropout/analyze` | Admin or teacher | Recomputes and upserts `default\|dropout-root-v1.0\|current` |
+| GET | `/api/institutional-dropout/trends` | Admin or teacher | Period dropout rates |
+| GET | `/api/institutional-dropout/factors` | Admin or teacher | Query: `factor`, `classification`, `confidence` |
+| GET | `/api/institutional-dropout/factors/{id}` | Admin or teacher | Evidence, RR, RD, drill-down |
+| GET | `/api/institutional-dropout/departments` | Admin or teacher | Sections + department-unavailable note |
+| GET | `/api/institutional-dropout/departments/{id}` | Admin or teacher | One section slice |
+| GET | `/api/institutional-dropout/semesters` | Admin or teacher | |
+| GET | `/api/institutional-dropout/courses` | Admin or teacher | |
+| GET | `/api/institutional-dropout/heatmap` | Admin or teacher | Section × semester |
+| GET | `/api/institutional-dropout/intersections` | Admin or teacher | Combined-factor associations |
+| GET | `/api/institutional-dropout/recommendations` | Admin or teacher | Decision-support only |
+| GET | `/api/institutional-dropout/compare` | Admin or teacher | Query: `kind`, `left`, `right` |
+| GET | `/api/institutional-dropout/report` | Admin or teacher | Aggregated report JSON |
+| GET | `/api/institutional-dropout/export` | Admin or teacher | CSV |
+| GET | `/api/institutional-dropout/first-year` | Admin or teacher | Early-semester concentration when labels exist |
+| GET | `/api/institutional-dropout/outcomes` | Administrator | student_id + status only |
+| POST | `/api/institutional-dropout/outcomes` | Administrator | Record an explicit outcome |
+| POST | `/api/institutional-dropout/outcomes/import` | Administrator | CSV import |
+
+### CLASSORA Rewards
+
+Points are calculated on the server from `reward_policies`. Clients cannot submit a balance or a trusted discount. Redemption is a two-step validate → confirm. The QR/token payload is a random redemption identifier, not student marks or counselling data.
+
+| Method | Path | Who | Notes |
+| --- | --- | --- | --- |
+| POST | `/api/rewards/merchant/login` | Public | Merchant ID + access code → merchant session |
+| GET | `/api/rewards/wallet` | Student (own) or staff (`student_id`) | Server-derived wallet |
+| GET | `/api/rewards/transactions` | Student / staff | Paginated ledger |
+| GET | `/api/rewards/achievements` | Student / staff | Paginated achievements |
+| POST | `/api/rewards/achievements` | Student or award staff | Student submissions stay pending |
+| POST | `/api/rewards/awards` | Faculty / teacher / mentor / counsellor / admin | Policy-calculated recognition |
+| POST | `/api/rewards/achievements/{id}/verify` | Verifier roles | Approve / reject / request changes |
+| GET | `/api/rewards/requests` | Verifier roles | Pending verification and approval |
+| POST | `/api/rewards/requests/{id}/approve` | Approver / verifier | Self-approval blocked by default |
+| POST | `/api/rewards/requests/{id}/reject` | Verifier roles | Reason required |
+| POST | `/api/rewards/transactions/{id}/reverse` | Administrator | Compensating `REVERSAL` row |
+| POST | `/api/rewards/adjustments` | Administrator | Reason required |
+| GET | `/api/rewards/recommend` | Award staff | Policy recommendation only |
+| GET | `/api/rewards/rules` | Any reward viewer | How-to-earn copy |
+| GET/PUT | `/api/rewards/settings` | Administrator | Feature flags and caps |
+| GET/POST | `/api/rewards/policies` | GET viewers; POST admin | Versioned rules |
+| GET | `/api/rewards/marketplace` | Reward viewers | Active offers |
+| POST | `/api/rewards/offers/{id}/claim` | Student | Atomic deduct + voucher + token |
+| GET | `/api/rewards/vouchers` | Student (own) / merchant (own outlet) | Token shown only at claim |
+| POST | `/api/rewards/vouchers/{id}/cancel` | Administrator | Optional `REFUND` |
+| POST | `/api/rewards/redemptions/validate` | Merchant / admin | Does not redeem |
+| POST | `/api/rewards/redemptions/confirm` | Merchant / admin | Atomic `ACTIVE` → `REDEEMED` |
+| GET/POST | `/api/rewards/merchants` | GET viewers; POST admin | Access code hashed |
+| POST | `/api/rewards/offers` | Administrator | Inventory limits |
+| GET | `/api/rewards/analytics` | Admin or teacher | Observed activity only |
+| GET | `/api/rewards/leaderboard` | Viewers | Disabled unless configured |
+| GET | `/api/rewards/reconcile` | Administrator | Ledger / voucher consistency |
+| POST | `/api/rewards/jobs/tick` | Administrator | Expiry + reminders + optional attendance improvement |
+
+Merchant tokens cannot load `/api/success/workspace`, academic resources, or dropout APIs.
+
+### Secure multi-layer attendance
+
+Existing `POST /api/teacher/attendance/face|voice|confirm` is unchanged (preview + faculty save). The routes below add session + student verification. Face match never writes `PRESENT` unless an administrator has explicitly enabled `FACE_ONLY` and faculty finalizes matched students.
+
+| Method | Path | Who | Notes |
+| --- | --- | --- | --- |
+| POST | `/api/attendance/sessions` | Teacher | Start a time-boxed session |
+| GET | `/api/attendance/sessions` | Teacher / admin | Recent sessions |
+| GET | `/api/attendance/sessions/{id}` | Teacher (own) / admin | Live counts + roster states |
+| POST | `/api/attendance/sessions/{id}/analyze` | Teacher | Classroom photos → existing dlib pipeline |
+| POST | `/api/attendance/sessions/{id}/complete` | Teacher | Expires unverified marks; they are not present |
+| POST | `/api/attendance/sessions/{id}/cancel` | Teacher / admin | Reason required |
+| POST | `/api/attendance/sessions/{id}/finalize-matched` | Teacher | Only if policy is `FACE_ONLY` |
+| POST | `/api/attendance/sessions/{id}/correction` | Teacher / admin | PRESENT / ABSENT / REJECT + reason + audit |
+| GET | `/api/attendance/student/pending` | Student | Own verification requests only |
+| GET | `/api/attendance/student/history` | Student | Own verified/manual history |
+| POST | `/api/attendance/verification/qr` | Student | Rotating short-lived token |
+| POST | `/api/attendance/verification/code` | Student | One-time hashed code |
+| POST | `/api/attendance/verification/confirm` | Student | Token/code + optional device; atomic present |
+| POST | `/api/attendance/device/register` | Student | Device secret issued once |
+| GET/PUT | `/api/attendance/settings` | GET teacher/admin; PUT admin | Verification policy |
+| GET | `/api/attendance/analytics` | Teacher / admin | Verified vs manual; pending not present |
+
+### Predictive Intelligence
+
+Statistical and retrieval-style analysis of uploaded academic/career text. There is no generative model and no vector database. Official schedules override date windows. Current syllabus down-ranks topics that no longer appear. Insufficient history returns an explicit insufficient status instead of a fabricated ranking. `student_id` on write is taken from the session, not the client.
+
+| Method | Path | Who | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/predictions/overview` | Student / staff | Counts, modes, capabilities (PDF/DOCX/OCR honesty) |
+| GET/POST | `/api/predictions/documents` | Student (own + institution) / staff (institution) | Paste text. Duplicate content hash is reported |
+| POST | `/api/predictions/documents/upload` | Same | TXT/CSV/MD/JSON; PDF/DOCX if libraries are installed. Images and executables rejected |
+| GET/PATCH/DELETE | `/api/predictions/documents/{id}` | Owner or institution staff | Students cannot read another student's private text |
+| POST | `/api/predictions/documents/{id}/reprocess` | Owner / staff | Rebuild items from stored text |
+| POST | `/api/predictions/analyze` | Viewers | Academic + career + plan in one payload |
+| GET | `/api/predictions/academic` | Viewers | Topic/question priorities |
+| GET | `/api/predictions/exam-date` | Viewers | Window or official override |
+| GET | `/api/predictions/questions` | Viewers | Ranked questions with evidence |
+| GET | `/api/predictions/topics` | Viewers | Topic weightage |
+| GET | `/api/predictions/career` | Viewers | Skills, rounds, stipend only if numbers exist |
+| POST | `/api/predictions/query` | Viewers | Natural-language router over the same statistics |
+| GET | `/api/predictions/history` | Student (own) / staff (non-student institutional) | Previous predictions |
+| GET | `/api/predictions/evidence/{id}` | Viewers | Citations the caller is allowed to see |
+| POST | `/api/predictions/plans` | Student | Save an edited study plan |
+| GET/PUT | `/api/predictions/settings` | Administrator | Weights and minimum sample sizes |
+
+Merchant sessions cannot call these routes.
+
+### Communities
+
+Students browse and join approved interest communities. New communities are requests until an administrator approves them. Duplicate/similar names are flagged, not auto-created. The default public identity is numeric `student_id`. Optional name/bio/skills are omitted from JSON unless that student enabled the matching privacy flag.
+
+| Method | Path | Who | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/communities` | Student / admin | Server-side search, category, pagination |
+| GET | `/api/communities/{id}` | Student / admin | Detail; suspended communities are not in discovery |
+| POST/DELETE | `/api/communities/{id}/join` `/leave` | Student | Unique membership |
+| GET/POST | `/api/communities/{id}/posts` | Members post | Author identity resolved server-side |
+| POST | `/api/communities/requests` | Student | Preview/block on near-duplicates; `continueDespiteDuplicates` flags admin |
+| POST | `/api/communities/requests/{id}/review` | Administrator | APPROVE / REJECT / CHANGES |
+| GET/PUT | `/api/communities/privacy` | Student (own) | `studentId` in the body cannot change another student |
+| POST | `/api/communities/reports` | Student | Moderators/admin resolve |
+| GET | `/api/community-reports` | Admin / community moderators | Open reports |
+| POST | `/api/communities/{id}/status` | Administrator | ACTIVE / SUSPENDED / ARCHIVED |
+
+No direct messaging. Merchant sessions cannot call these routes.
+
+---
+
 ## OpenAPI
 
 With the API running: http://127.0.0.1:8000/docs (FastAPI Swagger UI) and `/redoc`.

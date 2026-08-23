@@ -5,6 +5,9 @@ import MicRecorder from "./MicRecorder";
 import { formatDateTime } from "./display";
 import AcademicResources from "./AcademicResources";
 import SuccessWorkspace, { AccountPanel, InstitutionPanel } from "./Features";
+import ClassoraRewards from "./ClassoraRewards";
+import SecureAttendance from "./SecureAttendance";
+import Communities from "./Communities";
 import {
   DashFooter,
   DashHeader,
@@ -36,12 +39,16 @@ const STUDENT_MODULES = [
   "Ask for support",
   "Anonymous Mentorship",
   "Academic Resources",
+  "My Rewards",
+  "Verify Attendance",
+  "Predictive Intelligence",
+  "Communities",
   "Account",
 ];
 
 function studentTabFromUrl() {
   const tab = new URLSearchParams(window.location.search).get("tab");
-  if (["subjects", "progress", "resources", "mentorship", "account"].includes(tab)) return tab;
+  if (["subjects", "progress", "resources", "mentorship", "rewards", "verify", "predict", "communities", "account"].includes(tab)) return tab;
   return "subjects";
 }
 
@@ -141,10 +148,19 @@ const portals = [
     body: "Student Success Hub: predicted-risk review, cases, and interventions.",
     cta: "Staff Portal →",
   },
+  {
+    id: "merchant",
+    kicker: "CAMPUS",
+    title: "Campus Merchant",
+    body: "Validate and redeem CLASSORA Reward vouchers for your outlet. You cannot see academic or counselling data.",
+    cta: "Merchant Portal →",
+    secondary: true,
+  },
 ];
 
 const teacherNav = [
   { id: "attendance", label: "Take Attendance" },
+  { id: "secure", label: "Secure Attendance" },
   { id: "subjects", label: "Manage Subjects" },
   { id: "records", label: "Attendance Records" },
   { id: "institution", label: "Institution" },
@@ -157,6 +173,10 @@ const studentNav = [
   { id: "progress", label: "My Progress & Support" },
   { id: "resources", label: "Academic Resources" },
   { id: "mentorship", label: "My Mentorship" },
+  { id: "rewards", label: "My Rewards" },
+  { id: "verify", label: "Verify attendance" },
+  { id: "predict", label: "Predictive Intelligence" },
+  { id: "communities", label: "Communities" },
   { id: "account", label: "Account status" },
 ];
 
@@ -210,8 +230,12 @@ export default function ClassroomApp() {
         {!session && portal === "student" && (
           <StudentAuth health={health} busy={busy} setBusy={setBusy} setError={setError} signIn={signIn} onBack={() => { setError(""); setPortal(null); }} />
         )}
+        {!session && portal === "merchant" && (
+          <MerchantAuth busy={busy} setBusy={setBusy} setError={setError} signIn={signIn} onBack={() => { setError(""); setPortal(null); }} />
+        )}
         {session?.user_role === "teacher" && <TeacherDesk session={session} health={health} setError={setError} onLogout={logout} />}
         {session?.user_role === "student" && <StudentDesk session={session} setError={setError} onLogout={logout} />}
+        {session?.user_role === "merchant" && <MerchantDesk session={session} onLogout={logout} />}
         {["counsellor", "administrator", "faculty", "mentor"].includes(session?.user_role) &&
           session?.user_role !== "teacher" &&
           session?.user_role !== "student" && <SuccessDesk session={session} setError={setError} onLogout={logout} />}
@@ -653,6 +677,7 @@ function TeacherDesk({ session, health, setError, onLogout }) {
           </div>
         </div>
       )}
+      {tab === "secure" && <SecureAttendance session={session} />}
       {tab === "attendance" && (
         <div className="co-card space-y-6">
           <p className="co-caption">Classora intelligence</p>
@@ -752,7 +777,7 @@ function TeacherDesk({ session, health, setError, onLogout }) {
           <GroupedRecords records={records} />
         </div>
       )}
-      {tab === "institution" && <InstitutionPanel setError={setError} />}
+      {tab === "institution" && <InstitutionPanel setError={setError} session={session} />}
       {tab === "account" && <AccountPanel session={session} setError={setError} />}
       {tab === "success" && <SuccessWorkspace session={session} setError={setError} />}
       <DashFooter />
@@ -899,11 +924,13 @@ function StudentDesk({ session, setError, onLogout }) {
         </div>
       )}
       {tab === "resources" && <AcademicResources key={resourceNonce} session={session} />}
-      {tab !== "subjects" && tab !== "resources" && (
+      {tab === "verify" && <SecureAttendance session={session} />}
+      {tab === "communities" && <Communities session={session} />}
+      {tab !== "subjects" && tab !== "resources" && tab !== "verify" && tab !== "communities" && (
         <SuccessWorkspace
           session={session}
           setError={setError}
-          defaultModule={tab === "mentorship" ? "Anonymous Mentorship" : tab === "account" ? "Account" : "My Digital Twin"}
+          defaultModule={tab === "mentorship" ? "Anonymous Mentorship" : tab === "account" ? "Account" : tab === "rewards" ? "My Rewards" : tab === "verify" ? "Verify Attendance" : tab === "predict" ? "Predictive Intelligence" : tab === "communities" ? "Communities" : "My Digital Twin"}
           cached={workspace || shell}
           onCached={setWorkspace}
         />
@@ -915,6 +942,48 @@ function StudentDesk({ session, setError, onLogout }) {
           window.dispatchEvent(new CustomEvent("classora-risk-goto", { detail: kind }));
         }}
       />
+      <DashFooter />
+    </div>
+  );
+}
+
+function MerchantAuth({ busy, setBusy, setError, signIn, onBack }) {
+  const [form, setForm] = useState({ merchantId: "", accessCode: "" });
+  const submit = async (event) => {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      signIn(await api.merchantLogin({ merchantId: form.merchantId, accessCode: form.accessCode }));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <AuthCard kicker="CAMPUS MERCHANT" title="Redeem CLASSORA Rewards" caption="Use the access code issued by your institution administrator." onBack={onBack}>
+      <form className="space-y-3" onSubmit={submit}>
+        <Field label="Merchant ID"><input className="co-input" value={form.merchantId} onChange={(e) => setForm({ ...form, merchantId: e.target.value })} /></Field>
+        <Field label="Access code"><input className="co-input" type="password" value={form.accessCode} onChange={(e) => setForm({ ...form, accessCode: e.target.value })} /></Field>
+        <button className="co-btn co-btn-stretch" disabled={busy}>{busy ? "Signing in…" : "Enter merchant desk"}</button>
+      </form>
+    </AuthCard>
+  );
+}
+
+function MerchantDesk({ session, onLogout }) {
+  return (
+    <div>
+      <div className="co-auth-top mb-4">
+        <DashHeader />
+        <div className="max-w-md">
+          <WelcomeBanner name={session.merchant_data?.name || "Merchant"} subtitle="Validate vouchers. No academic or counselling data." />
+          <button type="button" className="co-btn co-btn-secondary mt-3" onClick={onLogout}>Logout</button>
+        </div>
+      </div>
+      <hr className="co-hr" />
+      <ClassoraRewards session={session} />
       <DashFooter />
     </div>
   );

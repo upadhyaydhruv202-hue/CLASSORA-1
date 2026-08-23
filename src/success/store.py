@@ -20,6 +20,70 @@ _ACADEMIC = {
     "academic_resources",
     "academic_resource_reports",
 }
+_COHORT = {
+    "institutional_anomalies",
+    "institutional_anomaly_metrics",
+    "institutional_anomaly_snapshots",
+    "institutional_anomaly_notes",
+    "institutional_anomaly_settings",
+    "student_academic_outcomes",
+    "institutional_dropout_analyses",
+    "institutional_dropout_factors",
+    "institutional_dropout_slices",
+    "institutional_dropout_intersections",
+    "institutional_dropout_settings",
+}
+_COMMUNITIES = {
+    "community_settings",
+    "community_categories",
+    "communities",
+    "community_members",
+    "community_requests",
+    "community_privacy",
+    "community_posts",
+    "community_comments",
+    "community_reactions",
+    "community_events",
+    "community_event_regs",
+    "community_resources",
+    "community_reports",
+    "community_moderation",
+    "community_blocks",
+}
+_PREDICTIONS = {
+    "prediction_settings",
+    "prediction_documents",
+    "prediction_items",
+    "prediction_results",
+    "prediction_evidence",
+    "prediction_history",
+    "prediction_outcomes",
+    "prediction_plans",
+}
+_ATTENDANCE = {
+    "secure_attendance_settings",
+    "attendance_sessions",
+    "attendance_face_results",
+    "attendance_marks",
+    "attendance_tokens",
+    "attendance_devices",
+    "attendance_audit",
+    "attendance_disputes",
+}
+_REWARDS = {
+    "reward_settings",
+    "reward_categories",
+    "reward_policies",
+    "reward_achievements",
+    "reward_transactions",
+    "reward_milestones",
+    "reward_badges",
+    "reward_notice_log",
+    "campus_merchants",
+    "reward_offers",
+    "reward_vouchers",
+    "voucher_redemptions",
+}
 _AVAIL = {}
 _LAST_ERROR = {}
 
@@ -30,6 +94,10 @@ def _local_ok(table: str) -> bool:
 
 def _academic_fallback(table: str) -> bool:
     return table in _ACADEMIC and _local_ok(table)
+
+
+def _soft_fallback(table: str) -> bool:
+    return (table in _ACADEMIC or table in _COHORT or table in _REWARDS or table in _ATTENDANCE or table in _PREDICTIONS or table in _COMMUNITIES) and _local_ok(table)
 
 
 def _now():
@@ -79,7 +147,7 @@ def available(table: str) -> bool:
     except Exception as exc:
         _LAST_ERROR[table] = str(exc)
         _AVAIL[table] = False
-        return _academic_fallback(table)
+        return _soft_fallback(table)
 
 
 def insert(table: str, row: dict):
@@ -119,7 +187,7 @@ def insert(table: str, row: dict):
                         message = str(retry_exc)
             # Only fall back locally when the table itself is missing.
             missing = "PGRST205" in message or "could not find the table" in message.lower()
-            if missing and _academic_fallback(table):
+            if missing and _soft_fallback(table):
                 _AVAIL[table] = False
             else:
                 if "PGRST205" in message or "could not find the table" in message.lower():
@@ -127,7 +195,7 @@ def insert(table: str, row: dict):
                 return None
     if table in _CLOUD_ONLY:
         return None
-    if is_supabase_configured() and not _academic_fallback(table):
+    if is_supabase_configured() and not _soft_fallback(table):
         return None
     with _LOCK:
         data = _load()
@@ -167,7 +235,7 @@ def select(table: str, **eq):
             missing = "PGRST205" in message or "could not find the table" in message.lower()
             if missing:
                 _AVAIL[table] = False
-                if not _academic_fallback(table):
+                if not _soft_fallback(table):
                     return []
             else:
                 return []
@@ -195,7 +263,7 @@ def update(table: str, match: dict, values: dict):
         except Exception as exc:
             _LAST_ERROR[table] = str(exc)
             _AVAIL[table] = False
-            if not _academic_fallback(table):
+            if not _soft_fallback(table):
                 return None
     if table in _CLOUD_ONLY:
         return None
@@ -209,3 +277,37 @@ def update(table: str, match: dict, values: dict):
                 changed.append(row)
         _dump(data)
         return changed
+
+
+def delete(table: str, **eq):
+    if not eq:
+        return []
+    if is_supabase_configured() and _AVAIL.get(table) is not False:
+        try:
+            q = supabase.table(table).delete()
+            for k, v in eq.items():
+                q = q.eq(k, v)
+            data = q.execute().data
+            _AVAIL[table] = True
+            _LAST_ERROR.pop(table, None)
+            return data
+        except Exception as exc:
+            _LAST_ERROR[table] = str(exc)
+            _AVAIL[table] = False
+            if not _soft_fallback(table):
+                return None
+    if table in _CLOUD_ONLY:
+        return None
+    with _LOCK:
+        data = _load()
+        rows = data.setdefault("tables", {}).setdefault(table, [])
+        kept = []
+        removed = []
+        for row in rows:
+            if all(row.get(k) == v for k, v in eq.items()):
+                removed.append(row)
+            else:
+                kept.append(row)
+        data["tables"][table] = kept
+        _dump(data)
+        return removed

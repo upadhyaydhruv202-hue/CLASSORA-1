@@ -28,7 +28,11 @@ def sanitize_staff(staff):
     return _public(staff, drop=("password",))
 
 
-def session_payload(*, role, teacher=None, student=None, staff=None, demo=False, demo_scenario=None):
+def sanitize_merchant(merchant):
+    return _public(merchant, drop=("access_code_hash", "password"))
+
+
+def session_payload(*, role, teacher=None, student=None, staff=None, merchant=None, demo=False, demo_scenario=None):
     now = datetime.utcnow()
     return {
         "is_logged_in": True,
@@ -39,6 +43,7 @@ def session_payload(*, role, teacher=None, student=None, staff=None, demo=False,
         "teacher_data": sanitize_teacher(teacher),
         "student_data": sanitize_student(student),
         "staff_data": sanitize_staff(staff),
+        "merchant_data": sanitize_merchant(merchant),
         "last_activity": now.isoformat(),
         "session_started_at": now.isoformat(),
         "expires_at": (now + timedelta(minutes=SESSION_MINUTES)).isoformat(),

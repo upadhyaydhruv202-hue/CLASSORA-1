@@ -19,3 +19,5 @@ fastapi
 uvicorn
 python-multipart
 pillow
+pypdf
+python-docx

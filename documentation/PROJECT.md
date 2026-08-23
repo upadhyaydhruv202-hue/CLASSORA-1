@@ -61,6 +61,10 @@ FastAPI  (Uvicorn, Python 3.11)
         ├── src/pipelines/face_pipeline.py     dlib + SVM
         ├── src/pipelines/voice_pipeline.py    Resemblyzer
         ├── src/success/risk_model.py          success-risk-v1.1
+        ├── src/cohort/engine.py               institutional cohort anomalies
+        ├── src/dropout/engine.py              institutional dropout root-cause
+        ├── src/rewards/service.py             achievement ledger, wallet, vouchers
+        ├── src/attendance/service.py          secure multi-layer attendance
         ├── src/mentorship/service.py
         ├── src/moderation/service.py
         └── src/database/
@@ -87,10 +91,13 @@ Supabase PostgreSQL   or   data/local_db.json (+ data/success_store.json)
 | --- | --- | --- |
 | App shell | `website/src/App.jsx` | `/` vs `/app`; landing splash once per session |
 | Landing | `website/src/experience/` | 3D world, overlays, Launch CLASSORA |
-| Classroom | `website/src/classroom/App.jsx` | Portals, auth, teacher desk, student desk, staff hub |
+| Classroom | `website/src/classroom/App.jsx` | Portals, auth, teacher desk, student desk, staff hub, merchant desk |
 | Camera | `CameraCapture.jsx` | JPEG capture (640px face, 960px classroom) |
 | Mic | `MicRecorder.jsx` | Voice enrollment / attendance |
-| Success UI | `Features.jsx` | Workspace modules, twin charts, mentorship, complaints |
+| Success UI | `Features.jsx` | Workspace modules, twin charts, mentorship, complaints, rewards entry |
+| Rewards UI | `ClassoraRewards.jsx` | Student wallet/marketplace, staff award/approval, admin merchants, merchant scan |
+| Predictions UI | `PredictiveIntelligence.jsx` | Academic/career cards, source ingest, query, planner, history |
+| Communities UI | `Communities.jsx` | Discover, join, request, feed, events, privacy, admin review |
 | API client | `api.js` | All HTTP calls; prefixes `VITE_API_URL` |
 
 ### Backend
@@ -107,6 +114,9 @@ Supabase PostgreSQL   or   data/local_db.json (+ data/success_store.json)
 | Store | `src/success/store.py` | Insert/select success tables (cloud or JSON) |
 | Mentorship | `src/mentorship/` | Lifecycle, aliases, messages |
 | Moderation | `src/moderation/` | Complaints, admin decide, login gates |
+| Rewards | `src/rewards/` | Policy engine, FIFO wallet, ledger, merchants, voucher tokens |
+| Predictions | `src/predictions/` | Document ingest, content classification, statistical priorities, exam windows, career patterns |
+| Communities | `src/communities/` | Interest communities, duplicate detection, privacy-safe identity, moderation |
 | RBAC | `src/auth/rbac.py` | Role permission map used by guards |
 
 ---
@@ -127,7 +137,7 @@ Supabase PostgreSQL   or   data/local_db.json (+ data/success_store.json)
 1. Capture face → `POST /api/auth/student/face`. Unmatched faces are told to register.
 2. Register name + face (`POST /api/auth/student/register`). Voice bytes, if any, are embedded **after** the response (`BackgroundTasks`).
 3. Enroll with subject code (`POST /api/student/enroll`).
-4. View subjects, attendance-derived risk, Digital Twin, mentorship, account/moderation snapshot.
+4. View subjects, attendance-derived risk, Digital Twin, mentorship, **My Rewards**, **Predictive Intelligence**, **Communities**, account/moderation snapshot.
 
 ### Staff / Success Hub
 
@@ -136,6 +146,10 @@ Supabase PostgreSQL   or   data/local_db.json (+ data/success_store.json)
 3. Recommend → human review → open case → record outcome.
 4. Assign anonymous mentorship; student and mentor chat under aliases until policy reveals identity.
 5. Faculty/teacher file complaints; **only administrator** executes restriction/ban.
+6. Authorized staff open **Institutional Anomalies** to review cohort-level shifts vs historical baseline (not individual risk).
+7. Administrators and teachers open **Dropout Root Causes** for institution-level associations with explicit academic outcomes (not individual risk scores). Teachers see only their sections/courses.
+8. Authorized staff open **CLASSORA Rewards** to recognize verified achievements. Students redeem closed-loop campus vouchers. Campus merchants sign in on a separate portal and only validate/redeem tokens.
+9. Students and staff open **Predictive Intelligence** to upload PYQs, notes, schedules, and career records. The engine returns evidence-backed priorities and windows, never guaranteed outcomes.
 
 Landing “AI Demo” sliders (`website/src/experience/predict.js`) are **illustrative** and do not write to the database.
 
@@ -147,11 +161,11 @@ Defined in `src/auth/rbac.py`. Route-level checks use `require_role(...)`.
 
 | Role | Access in the running app |
 | --- | --- |
-| `teacher` | Own subjects, face/voice attendance, confirm logs, institution metrics, Success Hub, own complaints, invites, password change |
+| `teacher` | Own subjects, face/voice attendance, confirm logs, institution metrics, Success Hub, own complaints, invites, password change, institutional anomalies (scoped), dropout root-cause (scoped to taught sections/courses) |
 | `student` | Own subjects, enroll/unenroll, own risk/twin, help, appointments, mentorship, appeals |
-| `counsellor` | Success Hub, 360, cases, mentorship assign, complaints (create, not execute ban) |
+| `counsellor` | Success Hub, 360, cases, mentorship assign, complaints (create, not execute ban), institutional anomaly view |
 | `faculty` / `mentor` | Twin/explain/what-if, mentorship messages, report student |
-| `administrator` | Staff invite, mentorship admin, complaint review, execute moderation actions, appeals |
+| `administrator` | Staff invite, mentorship admin, complaint review, execute moderation actions, appeals, institutional anomaly admin, institution-wide dropout root-cause |
 
 **Login blockers.** `src/moderation/service.py` `login_allowed` can refuse a student whose moderation status is restricted / suspended / banned.
 

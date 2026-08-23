@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import AcademicResources from "./AcademicResources";
+import InstitutionalAnomalies, { AnomalyHealthSummary } from "./InstitutionalAnomalies";
+import DropoutRootCause, { DropoutHealthSummary } from "./DropoutRootCause";
+import ClassoraRewards, { RewardHealthSummary } from "./ClassoraRewards";
+import SecureAttendance from "./SecureAttendance";
+import PredictiveIntelligence, { PredictionHealthSummary } from "./PredictiveIntelligence";
+import Communities, { CommunityHealthSummary } from "./Communities";
 import { api } from "./api";
 import {
   cellText,
@@ -189,12 +195,17 @@ export default function SuccessWorkspace({ session, setError, defaultModule, cac
         busy={busy}
         run={run}
         onOpenMentorship={() => setModule("Anonymous Mentorship")}
+        onOpenAnomalies={() => setModule("Institutional Anomalies")}
+        onOpenDropout={() => setModule("Dropout Root Causes")}
+        onOpenRewards={() => setModule(session.user_role === "student" ? "My Rewards" : "CLASSORA Rewards")}
+        onOpenPredictions={() => setModule("Predictive Intelligence")}
+        onOpenCommunities={() => setModule("Communities")}
       />
     </div>
   );
 }
 
-function ModuleView({ module, data, profile, twin, session, busy, run, onOpenMentorship }) {
+function ModuleView({ module, data, profile, twin, session, busy, run, onOpenMentorship, onOpenAnomalies, onOpenDropout, onOpenRewards, onOpenPredictions, onOpenCommunities }) {
   const pred = profile?.prediction || {};
   const att = profile?.attendance || {};
   const recov = twin?.recovery || {};
@@ -215,6 +226,24 @@ function ModuleView({ module, data, profile, twin, session, busy, run, onOpenMen
         ]} />
         <Card title="Priority queue"><Table rows={profileRows(queue)} empty="No Critical or High cases in this set." /></Card>
         {module === "Institution success" && <Card title="Watchlist"><Table rows={inst.watchlist} empty="No watchlist students." /></Card>}
+        {module === "Institution success" && (
+          <Card title="Institutional Anomalies">
+            <AnomalyHealthSummary
+              summary={data.anomalySummary}
+              error=""
+              onOpen={onOpenAnomalies}
+            />
+          </Card>
+        )}
+        {module === "Institution success" && (session.user_role === "administrator" || session.user_role === "teacher") && (
+          <Card title="Institutional Dropout Intelligence">
+            <DropoutHealthSummary
+              summary={data.dropoutSummary}
+              error=""
+              onOpen={onOpenDropout}
+            />
+          </Card>
+        )}
         <Card title="Cases / SLA"><Table rows={data.cases} empty="No open cases." /></Card>
         {session.user_role !== "student" && profile && (
           <Card title="Assign anonymous mentorship">
@@ -242,6 +271,21 @@ function ModuleView({ module, data, profile, twin, session, busy, run, onOpenMen
           { label: "Confidence", value: pred.confidence },
         ]} />
         <p className="text-sm text-[#64748B]">{pred.disclaimer || data.disclaimer}</p>
+        {data.rewardSummary?.available && (
+          <Card title="My Rewards">
+            <RewardHealthSummary summary={data.rewardSummary} onOpen={onOpenRewards} />
+          </Card>
+        )}
+        {data.predictionSummary?.available && (
+          <Card title="Predictive Intelligence">
+            <PredictionHealthSummary summary={data.predictionSummary} onOpen={onOpenPredictions} />
+          </Card>
+        )}
+        {data.communitySummary?.available && (
+          <Card title="Communities">
+            <CommunityHealthSummary summary={data.communitySummary} onOpen={onOpenCommunities} />
+          </Card>
+        )}
         {temporal.label && <Notice title={labelize(temporal.pattern || "Pattern")} body={temporal.label} tone="info" />}
         {data.risk?.weekChange != null && (
           <p className="text-sm text-[#64748B]">
@@ -542,6 +586,30 @@ function ModuleView({ module, data, profile, twin, session, busy, run, onOpenMen
 
   if (module === "Academic Resources") {
     return <AcademicResources session={session} />;
+  }
+
+  if (module === "Institutional Anomalies") {
+    return <InstitutionalAnomalies session={session} />;
+  }
+
+  if (module === "Dropout Root Causes") {
+    return <DropoutRootCause session={session} />;
+  }
+
+  if (module === "My Rewards" || module === "CLASSORA Rewards" || module === "Merchant Rewards") {
+    return <ClassoraRewards session={session} />;
+  }
+
+  if (module === "Secure Attendance" || module === "Verify Attendance") {
+    return <SecureAttendance session={session} />;
+  }
+
+  if (module === "Predictive Intelligence") {
+    return <PredictiveIntelligence session={session} />;
+  }
+
+  if (module === "Communities") {
+    return <Communities session={session} />;
   }
 
   if (module === "Report Student" || module === "Complaint Management" || module === "Account") {
@@ -1426,7 +1494,7 @@ function ModerationDesk({ data, session, busy, run }) {
   );
 }
 
-export function InstitutionPanel({ setError }) {
+export function InstitutionPanel({ setError, session }) {
   const [data, setData] = useState(null);
   useEffect(() => {
     api.institution().then(setData).catch((err) => setError(err.message));
@@ -1442,6 +1510,14 @@ export function InstitutionPanel({ setError }) {
       ]} />
       <Card title="Bands"><Table rows={Object.entries(m.bands || {}).map(([Band, Students]) => ({ Band, Students }))} empty="No band data." /></Card>
       <Card title="Watchlist"><Table rows={m.watchlist} empty="No watchlist students." /></Card>
+      <Card title="Institutional Anomalies">
+        <InstitutionalAnomalies session={session} variant="embedded" />
+      </Card>
+      {(session?.user_role === "administrator" || session?.user_role === "teacher") && (
+        <Card title="Institutional Dropout Intelligence">
+          <DropoutRootCause session={session} variant="embedded" />
+        </Card>
+      )}
       <Card title="Latest-session absences"><Table rows={m.alerts} empty="No latest-session absences." /></Card>
       <Card title="Daily trend"><Table rows={m.trend} empty="No daily trend yet." /></Card>
       <Card title="Courses"><Table rows={m.courses} empty="No course rows." /></Card>
