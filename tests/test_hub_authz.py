@@ -10,9 +10,15 @@ from fastapi.testclient import TestClient
 from src.api.app import success_hub, success_student
 from src.api.features import (
     _alerts,
+    _appointment_kind,
+    _can_connect_appointment,
     _duplicate_import_row,
+    _modules,
+    _visible_appointments,
     router,
     success_alert_resolve,
+    success_appointment,
+    success_appointment_connect,
     success_search,
     success_settings_get,
     success_task_done,
@@ -224,6 +230,117 @@ class AuthorizationTests(unittest.TestCase):
             json={"invited_name": "A", "invited_username": "a", "role": "counsellor"},
         )
         self.assertEqual(res.status_code, 403)
+
+
+class MentoringCounsellingSeparationTests(unittest.TestCase):
+    def test_kind_normalization(self):
+        self.assertEqual(_appointment_kind("mentor"), "mentor")
+        self.assertEqual(_appointment_kind("mentoring"), "mentor")
+        self.assertEqual(_appointment_kind({"kind": "counselling"}), "counsellor")
+        self.assertEqual(_appointment_kind(""), "counsellor")
+        self.assertEqual(_appointment_kind("random"), "")
+
+    def test_connect_authorization_does_not_cross(self):
+        self.assertTrue(_can_connect_appointment("counsellor", "counsellor"))
+        self.assertFalse(_can_connect_appointment("counsellor", "mentor"))
+        self.assertTrue(_can_connect_appointment("mentor", "mentor"))
+        self.assertFalse(_can_connect_appointment("mentor", "counsellor"))
+        self.assertTrue(_can_connect_appointment("faculty", "mentor"))
+        self.assertFalse(_can_connect_appointment("faculty", "counsellor"))
+        self.assertTrue(_can_connect_appointment("administrator", "counsellor"))
+        self.assertTrue(_can_connect_appointment("administrator", "mentor"))
+
+    def test_workspace_hides_the_other_service(self):
+        rows = [
+            {"id": 1, "kind": "counsellor", "status": "requested"},
+            {"id": 2, "kind": "mentor", "status": "requested"},
+        ]
+        counsel = _visible_appointments("counsellor", rows)
+        mentor = _visible_appointments("mentor", rows)
+        student = _visible_appointments("student", rows)
+        admin = _visible_appointments("administrator", rows)
+        self.assertEqual([row["id"] for row in counsel], [1])
+        self.assertEqual([row["id"] for row in mentor], [2])
+        self.assertEqual(len(student), 2)
+        self.assertEqual(len(admin), 2)
+
+    def test_counsellor_modules_drop_duplicate_controls(self):
+        counsellor = _modules("counsellor")
+        teacher = _modules("teacher")
+        admin = _modules("administrator")
+        for name in ("Institution success", "Human review", "What-if"):
+            self.assertNotIn(name, counsellor)
+            self.assertIn(name, teacher)
+            self.assertIn(name, admin)
+        self.assertIn("Appointments", counsellor)
+        self.assertIn("Anonymous Mentorship", counsellor)
+
+    def test_student_mentoring_request_notifies_mentors(self):
+        from src.api.features import AppointmentIn
+        _, session = _bearer("student", student_id=18)
+        saved = [{"id": 9, "student_id": 18, "kind": "mentor", "status": "requested"}]
+        notes = []
+        with patch("src.api.features.store.insert", return_value=saved), \
+             patch("src.api.features.notify", side_effect=lambda **kwargs: notes.append(kwargs)):
+            res = success_appointment(AppointmentIn(kind="mentor"), session=session)
+        self.assertEqual(res["kind"], "mentor")
+        self.assertEqual(res["status"], "requested")
+        roles = [row["role"] for row in notes]
+        self.assertIn("mentor", roles)
+        self.assertNotIn("counsellor", roles)
+        self.assertIn("student", roles)
+
+    def test_student_counselling_request_notifies_counsellors(self):
+        from src.api.features import AppointmentIn
+        _, session = _bearer("student", student_id=18)
+        saved = [{"id": 8, "student_id": 18, "kind": "counsellor", "status": "requested"}]
+        notes = []
+        with patch("src.api.features.store.insert", return_value=saved), \
+             patch("src.api.features.notify", side_effect=lambda **kwargs: notes.append(kwargs)):
+            res = success_appointment(AppointmentIn(kind="counsellor"), session=session)
+        self.assertEqual(res["kind"], "counsellor")
+        roles = [row["role"] for row in notes]
+        self.assertIn("counsellor", roles)
+        self.assertNotIn("mentor", roles)
+
+    def test_counsellor_cannot_connect_mentoring_request(self):
+        from src.api.features import AppointmentConnectIn
+        _, session = _bearer("counsellor", staff_id=1)
+        with patch("src.api.features.store.select", return_value=[{
+            "id": 2, "student_id": 18, "kind": "mentor", "status": "requested",
+        }]):
+            with self.assertRaises(HTTPException) as ctx:
+                success_appointment_connect(AppointmentConnectIn(appointment_id=2), session=session)
+        self.assertEqual(ctx.exception.status_code, 403)
+        self.assertIn("mentor", ctx.exception.detail.lower())
+
+    def test_mentor_cannot_connect_counselling_request(self):
+        from src.api.features import AppointmentConnectIn
+        _, session = _bearer("mentor", staff_id=2)
+        with patch("src.api.features.store.select", return_value=[{
+            "id": 3, "student_id": 18, "kind": "counsellor", "status": "requested",
+        }]):
+            with self.assertRaises(HTTPException) as ctx:
+                success_appointment_connect(AppointmentConnectIn(appointment_id=3), session=session)
+        self.assertEqual(ctx.exception.status_code, 403)
+        self.assertIn("counsellor", ctx.exception.detail.lower())
+
+
+class AttendanceTimestampTests(unittest.TestCase):
+    def test_confirm_stamp_is_timezone_aware_iso(self):
+        from src.api.app import AttendanceConfirmIn, teacher_confirm_attendance
+        _, session = _bearer("teacher", teacher_id=1)
+        with patch("src.api.app._cloud", return_value=False), \
+             patch("src.api.app.local.add_attendance", side_effect=lambda logs: logs):
+            res = teacher_confirm_attendance(
+                AttendanceConfirmIn(subject_id=1, present_ids=[18], absent_ids=[]),
+                session=session,
+            )
+        stamp = res["timestamp"]
+        parsed = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+        self.assertIsNotNone(parsed.tzinfo)
+        self.assertEqual(parsed.tzinfo, timezone.utc)
+        self.assertNotIn("10:00 AM", stamp)
 
 
 if __name__ == "__main__":

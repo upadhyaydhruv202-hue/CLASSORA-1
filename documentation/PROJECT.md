@@ -169,6 +169,7 @@ See [DATABASE.md](DATABASE.md). Summary:
 - **Auth extras:** `auth_events`, `teacher_invites`
 - **Success:** `staff_users`, academic/LMS/risk/cases/appointments, etc.
 - **Mentorship / moderation:** additive schemas; run after success SQL
+- **Academic resources:** `schema_academic_resources.sql` — sources, types, subjects, resource metadata + original URLs, broken-link reports
 
 Without Supabase, classroom data is `data/local_db.json`. Success-layer inserts that are not cloud-only go to `data/success_store.json`. Mentorship and complaints are **cloud-only** (`store._CLOUD_ONLY`).
 

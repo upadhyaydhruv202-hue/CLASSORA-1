@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import AcademicResources from "./AcademicResources";
 import { api } from "./api";
 import {
   cellText,
@@ -378,10 +379,18 @@ function ModuleView({ module, data, profile, twin, session, busy, run, onOpenMen
   if (module === "Appointments" || module === "Interventions") {
     const recs = profile?.recommendations || [];
     const appts = data.appointments || [];
-    const requested = appts.filter((row) => String(row.status || "").toLowerCase() === "requested");
-    const canConnect = ["counsellor", "administrator", "mentor", "faculty"].includes(session.user_role);
-    const waiting = session.user_role === "student" && appts.some((row) => String(row.status || "").toLowerCase() === "requested");
-    const linked = session.user_role === "student" && appts.some((row) => String(row.status || "").toLowerCase() === "connected");
+    const role = session.user_role;
+    const requested = appts.filter((row) => {
+      if (String(row.status || "").toLowerCase() !== "requested") return false;
+      const kind = appointmentKind(row);
+      if (role === "counsellor") return kind === "counsellor";
+      if (role === "mentor" || role === "faculty") return kind === "mentor";
+      if (role === "administrator") return true;
+      return false;
+    });
+    const canConnect = ["counsellor", "administrator", "mentor", "faculty"].includes(role);
+    const counsel = serviceStatus(appts, "counsellor");
+    const mentoring = serviceStatus(appts, "mentor");
     return (
       <div className="space-y-4">
         {module === "Interventions" && (
@@ -393,11 +402,22 @@ function ModuleView({ module, data, profile, twin, session, busy, run, onOpenMen
             )}
           </Card>
         )}
-        <Card title="Appointments"><Table rows={appts} empty="No appointments requested." /></Card>
+        <Card title="Appointments">
+          <Table
+            rows={appts}
+            columns={["id", "kind", "status", "student_id", "starts_at"]}
+            rename={{ kind: "Service", starts_at: "Requested", student_id: "Student ID" }}
+            empty="No appointments requested."
+          />
+        </Card>
         {canConnect && (
           <Card title="Connect privately">
             <p className="mb-3 text-sm text-[#64748B]">
-              A request is only a ticket. Click connect to open an alias-only chat in Anonymous Mentorship. The student will not see your name.
+              {role === "counsellor"
+                ? "Counselling requests appear here. Connecting opens an alias-only chat. The student will not see your name."
+                : role === "mentor" || role === "faculty"
+                  ? "Mentoring requests appear here. Connecting opens an alias-only chat. The student will not see your name."
+                  : "Accept only the matching service. Connecting opens an alias-only chat. The student will not see your name."}
             </p>
             {requested.length ? requested.map((row) => (
               <button
@@ -412,21 +432,64 @@ function ModuleView({ module, data, profile, twin, session, busy, run, onOpenMen
                   onOpenMentorship?.();
                 }}
               >
-                Connect privately — student {row.student_id} (#{row.id})
+                {appointmentKind(row) === "mentor" ? "Accept mentoring" : "Accept counselling"} — student {row.student_id} (#{row.id})
               </button>
             )) : (
-              <p className="text-sm text-[#64748B]">No waiting requests. If a chat already exists, open Anonymous Mentorship.</p>
+              <p className="text-sm text-[#64748B]">No waiting requests for your service. If a chat already exists, open Anonymous Mentorship.</p>
             )}
           </Card>
         )}
-        {session.user_role === "student" && waiting && (
-          <Notice title="Waiting for the counsellor" body="They will open a private alias chat. You cannot message them from this ticket. Watch Notifications, then open Anonymous Mentorship." tone="info" />
-        )}
-        {session.user_role === "student" && linked && (
-          <Card title="Private chat is open">
-            <p className="mb-3 text-sm text-[#64748B]">Talk in Anonymous Mentorship. You will see an alias such as MTR-…, not the counsellor’s name.</p>
-            <button type="button" className="co-btn" onClick={() => onOpenMentorship?.()}>Open Anonymous Mentorship</button>
-          </Card>
+        {role === "student" && (
+          <>
+            <Card title="I need Counselling">
+              <p className="mb-3 text-sm text-[#64748B]">Personal or academic counselling goes to a counsellor — not a mentor.</p>
+              <Notice
+                title={counsel === "connected" ? "Counselling accepted" : counsel === "requested" ? "Counselling pending" : "No counselling request"}
+                body={counsel === "connected"
+                  ? "A counsellor opened a private alias chat. Open Anonymous Mentorship to continue."
+                  : counsel === "requested"
+                    ? "A counsellor will review this request. You cannot message them from this ticket."
+                    : "Request counselling when you want personal or academic support from a counsellor."}
+                tone={counsel === "connected" ? "ok" : "info"}
+              />
+              {counsel !== "connected" && (
+                <button
+                  disabled={busy || counsel === "requested"}
+                  className="co-btn mt-3"
+                  onClick={() => run(() => api.bookAppointment({ kind: "counsellor" }))}
+                >
+                  {counsel === "requested" ? "Counselling request pending" : "Request counselling"}
+                </button>
+              )}
+              {counsel === "connected" && (
+                <button type="button" className="co-btn mt-3" onClick={() => onOpenMentorship?.()}>Enter counselling session</button>
+              )}
+            </Card>
+            <Card title="I need Mentoring">
+              <p className="mb-3 text-sm text-[#64748B]">Study guidance and mentor sessions go to a mentor — not a counsellor.</p>
+              <Notice
+                title={mentoring === "connected" ? "Mentoring accepted" : mentoring === "requested" ? "Mentoring pending" : "No mentoring request"}
+                body={mentoring === "connected"
+                  ? "A mentor opened a private alias chat. Open Anonymous Mentorship to continue."
+                  : mentoring === "requested"
+                    ? "A mentor will review this request. You cannot message them from this ticket."
+                    : "Request mentoring when you want study guidance from a mentor."}
+                tone={mentoring === "connected" ? "ok" : "info"}
+              />
+              {mentoring !== "connected" && (
+                <button
+                  disabled={busy || mentoring === "requested"}
+                  className="co-btn mt-3"
+                  onClick={() => run(() => api.bookAppointment({ kind: "mentor" }))}
+                >
+                  {mentoring === "requested" ? "Mentoring request pending" : "Request mentoring"}
+                </button>
+              )}
+              {mentoring === "connected" && (
+                <button type="button" className="co-btn mt-3" onClick={() => onOpenMentorship?.()}>Enter mentoring session</button>
+              )}
+            </Card>
+          </>
         )}
         <Card title="Tasks">
           <Table rows={data.tasks} columns={["id", "task", "done", "student_id"]} empty="No recovery tasks yet." />
@@ -449,11 +512,6 @@ function ModuleView({ module, data, profile, twin, session, busy, run, onOpenMen
         {session.user_role !== "student" && profile && (
           <Card title="Assign recovery task">
             <TaskAssign studentId={profile.student_id} busy={busy} run={run} />
-          </Card>
-        )}
-        {session.user_role === "student" && (
-          <Card title="Request appointment">
-            <button disabled={busy} className="co-btn" onClick={() => run(() => api.bookAppointment({ kind: "counsellor" }))}>Request counsellor meeting</button>
           </Card>
         )}
       </div>
@@ -480,6 +538,10 @@ function ModuleView({ module, data, profile, twin, session, busy, run, onOpenMen
 
   if (module === "Anonymous Mentorship" || module === "Mentorship admin") {
     return <MentorshipDesk data={data} session={session} busy={busy} run={run} profile={profile} />;
+  }
+
+  if (module === "Academic Resources") {
+    return <AcademicResources session={session} />;
   }
 
   if (module === "Report Student" || module === "Complaint Management" || module === "Account") {
@@ -1062,6 +1124,31 @@ function SupportForms({ session, data, busy, run }) {
   );
 }
 
+function appointmentKind(row) {
+  const raw = String(row?.kind || row?.staff_name || "").toLowerCase();
+  if (["mentor", "mentoring", "mentorship"].includes(raw)) return "mentor";
+  return "counsellor";
+}
+
+function serviceStatus(appts, kind) {
+  const rows = (appts || []).filter((row) => appointmentKind(row) === kind);
+  if (rows.some((row) => String(row.status || "").toLowerCase() === "connected")) return "connected";
+  if (rows.some((row) => String(row.status || "").toLowerCase() === "requested")) return "requested";
+  return "none";
+}
+
+function complaintDisplayRows(rows = []) {
+  return rows.map((row) => ({
+    "Complaint ID": row.complaintCode || row.complaint_code || row.complaintId || row.complaint_id,
+    Category: row.category,
+    Severity: row.severity,
+    Status: row.reviewStatus || row.status,
+    Student: row.studentReference || row.studentAlias || row.studentName,
+    Reporter: row.reporter,
+    Submitted: row.submittedAt,
+  }));
+}
+
 function normalizeMentorship(row) {
   if (!row || typeof row !== "object") return null;
   return {
@@ -1091,8 +1178,10 @@ function MentorshipDesk({ data, session, busy, run, profile }) {
   const chatClosed = ["COMPLETED", "SUSPENDED", "REJECTED"].includes(String(first?.status_code || "").toUpperCase());
   const admin = data.mentorship_admin;
   const metrics = admin?.metrics || {};
-  const waiting = session.user_role === "student" && !rows.length
-    && (data.appointments || []).some((row) => String(row.status || "").toLowerCase() === "requested");
+  const pendingCounsel = session.user_role === "student" && !rows.length
+    && serviceStatus(data.appointments, "counsellor") === "requested";
+  const pendingMentor = session.user_role === "student" && !rows.length
+    && serviceStatus(data.appointments, "mentor") === "requested";
   const youRole = session.user_role === "student" ? "student" : "mentor";
   const youAlias = session.user_role === "student" ? first?.student_alias : first?.mentor_alias;
   const otherAlias = session.user_role === "student" ? first?.mentor_alias : first?.student_alias;
@@ -1164,10 +1253,20 @@ function MentorshipDesk({ data, session, busy, run, profile }) {
     <div className="space-y-4">
       {session.user_role === "student" && !rows.length && (
         <Notice
-          title={waiting ? "Waiting for the counsellor" : "No private chat yet"}
-          body={waiting
-            ? "Your counsellor request is in. They must click Connect privately. After that, this page shows an alias chat (not their name)."
-            : "Request a counsellor meeting under Interventions. This tab stays empty until they open the private chat."}
+          title={pendingCounsel && pendingMentor
+            ? "Waiting for counselling and mentoring"
+            : pendingCounsel
+              ? "Waiting for the counsellor"
+              : pendingMentor
+                ? "Waiting for the mentor"
+                : "No private chat yet"}
+          body={pendingCounsel && pendingMentor
+            ? "Your counselling and mentoring requests are in. Each service must accept separately. After that, this page shows an alias chat (not their name)."
+            : pendingCounsel
+              ? "Your counselling request is in. The counsellor must accept it. After that, this page shows an alias chat (not their name)."
+              : pendingMentor
+                ? "Your mentoring request is in. The mentor must accept it. After that, this page shows an alias chat (not their name)."
+                : "Request counselling or mentoring under Interventions. This tab stays empty until they open the private chat."}
           tone="info"
         />
       )}
@@ -1273,11 +1372,12 @@ function ModerationDesk({ data, session, busy, run }) {
   const [decision, setDecision] = useState({ complaint_id: "", action: "warning", notes: "Reviewed with written reason." });
   const [appealText, setAppealText] = useState("");
   const [appealReview, setAppealReview] = useState({ appeal_id: "", decision: "accept", notes: "Reviewed." });
-  const firstId = data.complaints?.[0]?.complaint_id || data.complaints?.[0]?.id || "";
+  const firstComplaint = data.complaints?.[0] || {};
+  const firstId = firstComplaint.complaintId || firstComplaint.complaint_id || firstComplaint.complaintCode || firstComplaint.complaint_code || "";
   const firstAppeal = data.appeals?.[0]?.id || "";
   return (
     <div className="space-y-4">
-      <Card title="Complaints"><Table rows={data.complaints} empty="No complaints." /></Card>
+      <Card title="Complaints"><Table rows={complaintDisplayRows(data.complaints)} empty="No complaints." /></Card>
       <Card title="Appeals"><Table rows={data.appeals} empty="No appeals." /></Card>
       {session.user_role !== "student" && (
         <Card title="Report student">
@@ -1371,7 +1471,7 @@ export function AccountPanel({ session, setError }) {
           try { const res = await api.changePassword(pw); setMsg(res.detail); } catch (err) { setError(err.message); }
         }}>Update password</button>
       </Card>
-      <Card title="Invite teacher">
+      <Card title="Invite faculty">
         <input className="mb-2 w-full rounded-2xl border px-4 py-2" placeholder="Name" value={invite.invited_name} onChange={(e) => setInvite({ ...invite, invited_name: e.target.value })} />
         <input className="mb-2 w-full rounded-2xl border px-4 py-2" placeholder="Username" value={invite.invited_username} onChange={(e) => setInvite({ ...invite, invited_username: e.target.value })} />
         <button className="co-btn" onClick={async () => {

@@ -53,6 +53,7 @@ CLASSORA exists to replace paper registers and opaque “AI risk” dashboards w
 - **Human-in-the-loop interventions** — recommend, open case, record outcome, appointments, in-app help
 - **Anonymous mentorship** — assign, messages, sessions, feedback, reassign, suspend
 - **Moderation** — faculty/teacher complaints; administrator review, decide, student appeals
+- **Academic Resource Hub** — student directory of senior notes/PYQs/assignments with original source URLs; admin catalog management
 - **Local fallback store** — `data/local_db.json` when Supabase is not configured
 - **Production deploy** — Vercel (frontend) + Railway (API)
 
@@ -213,6 +214,7 @@ If using Supabase, open **SQL Editor** and run in this order:
 3. `supabase/schema_success.sql` — staff, academics, LMS events, risk, cases, appointments
 4. `supabase/schema_mentorship.sql` — anonymous mentorship
 5. `supabase/schema_moderation.sql` — complaints, appeals, student status
+6. `supabase/schema_academic_resources.sql` — academic resource hub (sources, types, subjects, original URLs, broken-link reports)
 
 There is no ORM migration runner. There is no seed script for production. Register users through `/app`.
 

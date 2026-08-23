@@ -52,7 +52,7 @@ export default function Hero({ metrics, pred }) {
             Prevent dropout.
           </motion.h1>
           <motion.p className="cine-body cine-hero-body" variants={item}>
-            Teachers capture a class photo or a short recording. CLASSORA matches the enrolled roster, then explains support-risk for a counsellor to review — not a diagnosis, and never automatic.
+            Faculty capture a class photo or a short recording. CLASSORA matches the enrolled roster, then explains support-risk for a counsellor to review — not a diagnosis, and never automatic.
           </motion.p>
           <motion.div className="cine-hero-hud" variants={item}>
             <div className="cine-hud-chip">

@@ -138,7 +138,34 @@ export const api = {
   reviewAppeal: (body) => request("/api/moderation/appeals/review", { method: "POST", body }),
   openComplaint: (id) => request(`/api/moderation/complaints/${id}/open`, { method: "POST" }),
   decideComplaint: (id, body) => request(`/api/moderation/complaints/${id}/decide`, { method: "POST", body }),
+  syncAcademicResources: (body = {}) => request("/api/academic-resources/sync", { method: "POST", body, timeoutMs: 180000 }),
+  academicCatalog: (params = {}) => request(`/api/academic-resources/catalog${academicQuery(params)}`),
+  academicResources: (params = {}) => request(`/api/academic-resources${academicQuery(params)}`),
+  academicResource: (id) => request(`/api/academic-resources/${id}`),
+  createAcademicResource: (body) => request("/api/academic-resources", { method: "POST", body }),
+  updateAcademicResource: (id, body) => request(`/api/academic-resources/${id}`, { method: "PUT", body }),
+  deactivateAcademicResource: (id) => request(`/api/academic-resources/${id}`, { method: "DELETE" }),
+  verifyAcademicResource: (id) => request(`/api/academic-resources/${id}/verify`, { method: "POST" }),
+  reportAcademicResource: (id, body) => request(`/api/academic-resources/${id}/report`, { method: "POST", body }),
+  createAcademicSubject: (body) => request("/api/academic-subjects", { method: "POST", body }),
+  updateAcademicSubject: (id, body) => request(`/api/academic-subjects/${id}`, { method: "PUT", body }),
+  createAcademicSource: (body) => request("/api/academic-sources", { method: "POST", body }),
+  updateAcademicSource: (id, body) => request(`/api/academic-sources/${id}`, { method: "PUT", body }),
+  createAcademicType: (body) => request("/api/academic-resource-types", { method: "POST", body }),
+  academicReports: (status = "") => request(`/api/academic-resource-reports${status ? `?status=${encodeURIComponent(status)}` : ""}`),
+  reviewAcademicReport: (id, body) => request(`/api/academic-resource-reports/${id}/review`, { method: "POST", body }),
 };
+
+function academicQuery(params = {}) {
+  const q = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      q.set(key, String(value));
+    }
+  });
+  const text = q.toString();
+  return text ? `?${text}` : "";
+}
 
 export function saveSession(token) {
   localStorage.setItem(TOKEN_KEY, token);

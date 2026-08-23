@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { api, clearSession, hasSession, saveSession } from "./api";
 import CameraCapture from "./CameraCapture";
 import MicRecorder from "./MicRecorder";
+import { formatDateTime } from "./display";
+import AcademicResources from "./AcademicResources";
 import SuccessWorkspace, { AccountPanel, InstitutionPanel } from "./Features";
 import {
   DashFooter,
@@ -33,8 +35,15 @@ const STUDENT_MODULES = [
   "Notifications",
   "Ask for support",
   "Anonymous Mentorship",
+  "Academic Resources",
   "Account",
 ];
+
+function studentTabFromUrl() {
+  const tab = new URLSearchParams(window.location.search).get("tab");
+  if (["subjects", "progress", "resources", "mentorship", "account"].includes(tab)) return tab;
+  return "subjects";
+}
 
 function studentWorkspaceShell(session, riskPayload) {
   const student = session?.student_data || {};
@@ -120,10 +129,10 @@ const portals = [
   },
   {
     id: "teacher",
-    kicker: "TEACHER",
-    title: "I'm a Teacher",
+    kicker: "FACULTY",
+    title: "I'm Faculty",
     body: "Run AI face & voice attendance, manage subjects, and review classroom records instantly.",
-    cta: "Teacher Portal →",
+    cta: "Faculty Portal →",
   },
   {
     id: "staff",
@@ -146,6 +155,7 @@ const teacherNav = [
 const studentNav = [
   { id: "subjects", label: "My Subjects" },
   { id: "progress", label: "My Progress & Support" },
+  { id: "resources", label: "Academic Resources" },
   { id: "mentorship", label: "My Mentorship" },
   { id: "account", label: "Account status" },
 ];
@@ -281,10 +291,10 @@ function TeacherAuth({ health, busy, setBusy, setError, signIn, onBack }) {
     }
   };
   const titles = {
-    login: { kicker: "Teacher access", title: "Login using password", caption: "The smarter way to connect classrooms." },
-    register: { kicker: "Teacher onboarding", title: "Register your teacher profile", caption: "Create your Classora teacher workspace." },
-    forgot: { kicker: "Password recovery", title: "Reset teacher password", caption: "Confirm the username and the name registered on the account." },
-    activate: { kicker: "Account activation", title: "Activate teacher invitation", caption: "Use the one-time code from an invited teacher. Codes expire after 7 days." },
+    login: { kicker: "Faculty access", title: "Login using password", caption: "The smarter way to connect classrooms." },
+    register: { kicker: "Faculty onboarding", title: "Register your faculty profile", caption: "Create your Classora faculty workspace." },
+    forgot: { kicker: "Password recovery", title: "Reset faculty password", caption: "Confirm the username and the name registered on the account." },
+    activate: { kicker: "Account activation", title: "Activate faculty invitation", caption: "Use the one-time code from an invited faculty member. Codes expire after 7 days." },
   }[mode];
   return (
     <AuthCard kicker={titles.kicker} title={titles.title} caption={titles.caption} onBack={onBack}>
@@ -751,12 +761,13 @@ function TeacherDesk({ session, health, setError, onLogout }) {
 }
 
 function StudentDesk({ session, setError, onLogout }) {
-  const [tab, setTab] = useState("subjects");
+  const [tab, setTab] = useState(studentTabFromUrl);
   const [data, setData] = useState({ subjects: [], attendance: [] });
   const [code, setCode] = useState(() => joinCodeFromUrl());
   const [joined, setJoined] = useState("");
   const [risk, setRisk] = useState(null);
   const [workspace, setWorkspace] = useState(null);
+  const [resourceNonce, setResourceNonce] = useState(0);
   const shell = useMemo(() => studentWorkspaceShell(session, risk), [session, risk]);
 
   const reload = async () => {
@@ -823,7 +834,20 @@ function StudentDesk({ session, setError, onLogout }) {
         </div>
       </div>
       {joined && <Notice tone="ok" title="Enrolled" body={joined} />}
-      <StretchNav items={studentNav} value={tab} onChange={setTab} className="co-student-nav" />
+      <StretchNav
+        items={studentNav}
+        value={tab}
+        onChange={(next) => {
+          setTab(next);
+          const url = new URL(window.location.href);
+          if (next === "subjects") url.searchParams.delete("tab");
+          else url.searchParams.set("tab", next);
+          ["year", "semester", "subject", "type", "source", "search", "sort", "page"].forEach((key) => url.searchParams.delete(key));
+          window.history.replaceState({}, "", url.pathname + url.search);
+          if (next === "resources") setResourceNonce((value) => value + 1);
+        }}
+        className="co-student-nav"
+      />
       <hr className="co-hr" />
       {tab === "subjects" && (
         <div>
@@ -870,11 +894,12 @@ function StudentDesk({ session, setError, onLogout }) {
                 </SubjectCard>
               );
             })}
-            {!(data.subjects || []).length && <EmptyState title="No subjects yet." body="Ask your teacher for a share code, or enroll above." />}
+            {!(data.subjects || []).length && <EmptyState title="No subjects yet." body="Ask your faculty member for a share code, or enroll above." />}
           </div>
         </div>
       )}
-      {tab !== "subjects" && (
+      {tab === "resources" && <AcademicResources key={resourceNonce} session={session} />}
+      {tab !== "subjects" && tab !== "resources" && (
         <SuccessWorkspace
           session={session}
           setError={setError}
@@ -916,11 +941,11 @@ function GroupedRecords({ records }) {
   const rows = useMemo(() => {
     const map = {};
     for (const row of records || []) {
-      const ts = String(row.timestamp || "").split(".")[0];
+      const raw = row.timestamp || "";
       const subject = row.subjects?.name || row.subject_id;
       const code = row.subjects?.subject_code || "";
-      const key = `${ts}|${subject}|${code}`;
-      map[key] ||= { Time: ts, Subject: subject, "Subject Code": code, present: 0, total: 0 };
+      const key = `${raw}|${subject}|${code}`;
+      map[key] ||= { Time: formatDateTime(raw) || String(raw).split(".")[0], Subject: subject, "Subject Code": code, present: 0, total: 0 };
       map[key].total += 1;
       if (row.is_present) map[key].present += 1;
     }

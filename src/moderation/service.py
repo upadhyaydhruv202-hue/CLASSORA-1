@@ -42,7 +42,43 @@ def _demo(session_state) -> bool:
 
 
 def _code() -> str:
-    return f"CMP-{uuid.uuid4().hex[:6].upper()}"
+    return f"CMP-{uuid.uuid4().hex[:8].upper()}"
+
+
+def public_complaint_id(row) -> str:
+    if not row:
+        return ""
+    code = str(row.get("complaint_code") or row.get("complaintCode") or "").strip()
+    if code:
+        return code.upper() if code.upper().startswith("CMP-") else code
+    cid = row.get("complaint_id") or row.get("complaintId")
+    if cid:
+        return f"CMP-{str(cid).replace('-', '')[:8].upper()}"
+    return ""
+
+
+def _notify_event(*, role, recipient_id, title, body):
+    if not title or recipient_id in (None, ""):
+        return
+    try:
+        from src.success.notify import notify
+        notify(role=role, recipient_id=recipient_id, title=title, body=body)
+    except Exception:
+        pass
+
+
+def _notify_reporter(row, title, body, reporter_role=None, reporter_staff_id=None, reporter_teacher_id=None):
+    staff_id = reporter_staff_id if reporter_staff_id is not None else (row or {}).get("reporter_staff_id")
+    teacher_id = reporter_teacher_id if reporter_teacher_id is not None else (row or {}).get("reporter_teacher_id")
+    role = reporter_role
+    if staff_id is not None:
+        if not role:
+            staff = get_staff_public(staff_id) or {}
+            role = staff.get("role") or "faculty"
+        _notify_event(role=role, recipient_id=staff_id, title=title, body=body)
+        return
+    if teacher_id is not None:
+        _notify_event(role="teacher", recipient_id=teacher_id, title=title, body=body)
 
 
 def _audit(*, actor_role, actor_ref, action, complaint_id=None, student_id=None,
@@ -374,6 +410,18 @@ def create_complaint(
         complaint_id=cid, student_id=student_id, new_status="SUBMITTED",
         reason=requested_action, metadata={"identity_protected": resolved.get("identity_protected")},
     )
+    code = public_complaint_id(complaint)
+    _notify_reporter(
+        complaint, f"Complaint {code} submitted",
+        "Administration has your complaint. This Complaint ID stays the same after refresh and status updates.",
+        reporter_role=reporter_role, reporter_staff_id=reporter_staff_id, reporter_teacher_id=teacher_id,
+    )
+    _notify_event(
+        role="administrator",
+        recipient_id="ops",
+        title=f"New complaint {code}",
+        body="Open Complaint Management to review the new complaint.",
+    )
     return _faculty_row(complaint), None
 
 
@@ -495,8 +543,19 @@ def reporter_stats(reporter_staff_id=None, teacher_id=None):
 def _complaint(complaint_id):
     if not installed() or not complaint_id:
         return None
+    key = str(complaint_id).strip()
+    if not key:
+        return None
     try:
-        rows = supabase.table("complaints").select("*").eq("complaint_id", complaint_id).limit(1).execute().data or []
+        rows = supabase.table("complaints").select("*").eq("complaint_id", key).limit(1).execute().data or []
+        if rows:
+            return rows[0]
+        code = key.upper()
+        rows = supabase.table("complaints").select("*").eq("complaint_code", code).limit(1).execute().data or []
+        if rows:
+            return rows[0]
+        if code != key:
+            rows = supabase.table("complaints").select("*").eq("complaint_code", key).limit(1).execute().data or []
         return rows[0] if rows else None
     except Exception:
         return None
@@ -549,16 +608,22 @@ def admin_open(complaint_id, admin_staff_id, admin_role):
     row = _complaint(complaint_id)
     if not row:
         return None, "Complaint not found."
+    complaint_id = row["complaint_id"]
     if row.get("status") == "SUBMITTED":
-        store.update("complaints", {"complaint_id": complaint_id}, {
+        store.update("complaints", {"complaint_id": row["complaint_id"]}, {
             "status": "UNDER_REVIEW",
             "updated_at": _now().isoformat(),
         })
         row["status"] = "UNDER_REVIEW"
         _audit(
             actor_role="administrator", actor_ref=admin_staff_id, action="ADMIN_REVIEW_STARTED",
-            complaint_id=complaint_id, student_id=row.get("student_id"),
+            complaint_id=row["complaint_id"], student_id=row.get("student_id"),
             previous_status="SUBMITTED", new_status="UNDER_REVIEW",
+        )
+        code = public_complaint_id(row)
+        _notify_reporter(
+            row, f"Complaint {code} under review",
+            "Administration opened your complaint. The Complaint ID is unchanged.",
         )
     _audit(
         actor_role="administrator", actor_ref=admin_staff_id, action="COMPLAINT_VIEWED",
@@ -635,19 +700,25 @@ def request_information(complaint_id, admin_staff_id, admin_role, body, session_
     if not text:
         return None, "Write the information you need."
     store.insert("complaint_messages", {
-        "complaint_id": complaint_id,
+        "complaint_id": row["complaint_id"],
         "author_role": "administrator",
         "body": text[:4000],
     })
-    store.update("complaints", {"complaint_id": complaint_id}, {
+    store.update("complaints", {"complaint_id": row["complaint_id"]}, {
         "status": "INFO_REQUIRED",
         "updated_at": _now().isoformat(),
     })
     _audit(
         actor_role="administrator", actor_ref=admin_staff_id, action="ADMIN_REQUESTED_INFORMATION",
-        complaint_id=complaint_id, student_id=row.get("student_id"),
+        complaint_id=row["complaint_id"], student_id=row.get("student_id"),
         previous_status=row.get("status"), new_status="INFO_REQUIRED", reason=text[:500],
     )
+    if row.get("status") != "INFO_REQUIRED":
+        code = public_complaint_id(row)
+        _notify_reporter(
+            row, f"Complaint {code} needs information",
+            "Administration asked for more detail. The Complaint ID is unchanged.",
+        )
     return True, "Faculty will see Additional Information Required — not your confidential notes."
 
 
@@ -683,8 +754,24 @@ def admin_decide(
     row = _complaint(complaint_id)
     if not row:
         return None, "Complaint not found."
+    complaint_id = row["complaint_id"]
     student_id = int(row["student_id"])
     prev = row.get("status")
+    code = public_complaint_id(row)
+
+    def _finish(new_status, message, *, notify_student=False, student_body=""):
+        _notify_reporter(
+            row, f"Complaint {code} updated",
+            f"Status is now {P.faculty_status_label(new_status or prev)}. The Complaint ID is unchanged.",
+        )
+        if notify_student:
+            _notify_event(
+                role="student",
+                recipient_id=student_id,
+                title=f"Account update for complaint {code}",
+                body=student_body or "Your account status was updated. Open Account status for details.",
+            )
+        return True, message
 
     store.insert("moderation_actions", {
         "complaint_id": complaint_id,
@@ -714,7 +801,7 @@ def admin_decide(
             complaint_id=complaint_id, student_id=student_id,
             previous_status=prev, new_status="DISMISSED", reason=note,
         )
-        return True, "Complaint dismissed. No restriction was applied. The record is retained."
+        return _finish("DISMISSED", "Complaint dismissed. No restriction was applied. The record is retained.")
 
     if action == "warning":
         store.update("complaints", {"complaint_id": complaint_id}, {
@@ -725,7 +812,12 @@ def admin_decide(
             complaint_id=complaint_id, student_id=student_id,
             previous_status=prev, new_status="WARNING_ISSUED", reason=note,
         )
-        return True, "Official warning recorded in the student's moderation history."
+        return _finish(
+            "WARNING_ISSUED",
+            "Official warning recorded in the student's moderation history.",
+            notify_student=True,
+            student_body="An official warning was recorded. Open Account status for details.",
+        )
 
     if action == "restrict":
         hours = int(duration_hours or 24)
@@ -735,7 +827,12 @@ def admin_decide(
         store.update("complaints", {"complaint_id": complaint_id}, {
             "status": "RESTRICTED", "updated_at": _now().isoformat(),
         })
-        return True, f"Temporary restriction applied for {hours} hours."
+        return _finish(
+            "RESTRICTED",
+            f"Temporary restriction applied for {hours} hours.",
+            notify_student=True,
+            student_body="Your account is temporarily restricted. Open Account status for details.",
+        )
 
     if action == "suspend":
         hours = int(duration_hours or 72)
@@ -745,7 +842,12 @@ def admin_decide(
         store.update("complaints", {"complaint_id": complaint_id}, {
             "status": "RESTRICTED", "updated_at": _now().isoformat(),
         })
-        return True, f"Account suspended for {hours} hours. Login is blocked until then."
+        return _finish(
+            "RESTRICTED",
+            f"Account suspended for {hours} hours. Login is blocked until then.",
+            notify_student=True,
+            student_body="Your account is suspended. Open Account status for details.",
+        )
 
     if action == "ban":
         _set_status(student_id, "BANNED", admin_staff_id=admin_staff_id, reason=note,
@@ -753,19 +855,32 @@ def admin_decide(
         store.update("complaints", {"complaint_id": complaint_id}, {
             "status": "BANNED", "updated_at": _now().isoformat(),
         })
-        return True, "Student account status is BANNED. The database record was not deleted."
+        return _finish(
+            "BANNED",
+            "Student account status is BANNED. The database record was not deleted.",
+            notify_student=True,
+            student_body="Your account is banned. You can appeal from Account status.",
+        )
 
     if action == "restore":
         _set_status(student_id, "ACTIVE", admin_staff_id=admin_staff_id, reason=note,
                     until_at=None, complaint_id=complaint_id, action_name="BAN_REVOKED")
-        return True, "Account restored to ACTIVE."
+        return _finish(
+            prev, "Account restored to ACTIVE.",
+            notify_student=True,
+            student_body="Your account was restored. Open Account status for details.",
+        )
 
     if action == "reduce":
         hours = int(duration_hours or 24)
         until = (_now() + timedelta(hours=hours)).isoformat()
         _set_status(student_id, "RESTRICTED", admin_staff_id=admin_staff_id, reason=note,
                     until_at=until, complaint_id=complaint_id, action_name="ACCOUNT_RESTRICTED")
-        return True, f"Restriction reduced to {hours} hours."
+        return _finish(
+            prev, f"Restriction reduced to {hours} hours.",
+            notify_student=True,
+            student_body="Your restriction was reduced. Open Account status for details.",
+        )
 
     return None, "Unhandled action."
 

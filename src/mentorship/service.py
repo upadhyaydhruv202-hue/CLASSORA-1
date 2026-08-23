@@ -173,7 +173,7 @@ def _load(mentor_staff_id):
         return 0
 
 
-def _pick_mentor(student_id, prefer_staff_id=None):
+def _pick_mentor(student_id, prefer_staff_id=None, prefer_roles=None):
     staff = store.select("staff_users") or []
     profiles = {int(p["staff_id"]): p for p in (store.select("mentor_profiles") or []) if p.get("staff_id") is not None}
     blocked = _rejected_pairs(student_id)
@@ -195,6 +195,11 @@ def _pick_mentor(student_id, prefer_staff_id=None):
         if sid in blocked:
             continue
         candidates.append((load, sid, s, prof))
+    if prefer_roles:
+        role_set = {str(r).strip().lower() for r in prefer_roles if r}
+        narrowed = [row for row in candidates if str((row[2] or {}).get("role") or "").lower() in role_set]
+        if narrowed:
+            candidates = narrowed
     if prefer_staff_id is not None:
         try:
             preferred = int(prefer_staff_id)
@@ -234,7 +239,7 @@ def _attendance_context(student_id):
     return band
 
 
-def assign_mentorship(student_id, actor_role, actor_ref, goal=None, risk_band=None, session_state=None, prefer_staff_id=None):
+def assign_mentorship(student_id, actor_role, actor_ref, goal=None, risk_band=None, session_state=None, prefer_staff_id=None, kind=None):
     """Counsellor/admin/student-request entry. Never returns mentor or student names."""
     if session_state and _demo(session_state):
         return None, "Demo Mode cannot write anonymous mentorships into production."
@@ -258,14 +263,38 @@ def assign_mentorship(student_id, actor_role, actor_ref, goal=None, risk_band=No
         if prefer_staff_id is not None and row:
             try:
                 if int(row.get("mentor_staff_id")) != int(prefer_staff_id):
-                    return None, "This student already has a private chat with another mentor."
+                    return None, "This student already has an open private session. End that session before starting another counselling or mentoring chat."
             except (TypeError, ValueError):
                 pass
             view = faculty_view(mid, prefer_staff_id)
             if view:
                 return view, "Private chat already open. Continue in Anonymous Mentorship."
         return student_view(mid, student_id), "This student already has an open anonymous mentorship."
-    mentor_id = _pick_mentor(student_id, prefer_staff_id=prefer_staff_id)
+    track = str(kind or "").strip().lower()
+    if track in ("mentor", "mentoring", "mentorship"):
+        track = "mentor"
+        prefer_roles = ("mentor", "faculty")
+        default_goal = "Private mentoring session."
+        student_title = "Mentor session opened"
+        student_body = "Mentoring started with {alias}. Identities stay hidden."
+        staff_title = "New mentoring student assigned"
+        done_msg = "Anonymous mentoring started."
+    elif track in ("counsellor", "counselor", "counselling", "counseling"):
+        track = "counsellor"
+        prefer_roles = ("counsellor",)
+        default_goal = "Private counselling session."
+        student_title = "Counselling session opened"
+        student_body = "Counselling started with {alias}. Identities stay hidden."
+        staff_title = "New counselling student assigned"
+        done_msg = "Anonymous counselling started."
+    else:
+        prefer_roles = None
+        default_goal = "Supportive check-in after early-warning signals."
+        student_title = "Anonymous mentor assigned"
+        student_body = "Counseling started with {alias}. Identities stay hidden for 7 days."
+        staff_title = "New anonymous student assigned"
+        done_msg = "Anonymous counseling started."
+    mentor_id = _pick_mentor(student_id, prefer_staff_id=prefer_staff_id, prefer_roles=prefer_roles)
     if not mentor_id:
         return None, "No available mentor. Increase faculty capacity or mark a mentor available."
     now = _now()
@@ -278,7 +307,7 @@ def assign_mentorship(student_id, actor_role, actor_ref, goal=None, risk_band=No
         "student_alias": student_alias,
         "mentor_alias": mentor_alias,
         "status": "ANONYMOUS_ACTIVE",
-        "counseling_goal": goal or "Supportive check-in after early-warning signals.",
+        "counseling_goal": goal or default_goal,
         "risk_band": risk_band or "Support",
         "attendance_context": _attendance_context(student_id),
         "started_at": now.isoformat(),
@@ -297,16 +326,16 @@ def assign_mentorship(student_id, actor_role, actor_ref, goal=None, risk_band=No
     })
     _notify(
         role="student", student_id=student_id, mentorship_id=mid,
-        title="Anonymous mentor assigned",
-        body=f"Counseling started with {mentor_alias}. Identities stay hidden for 7 days.",
+        title=student_title,
+        body=student_body.format(alias=mentor_alias),
     )
     _notify(
         role="mentor", staff_id=mentor_id, mentorship_id=mid,
-        title="New anonymous student assigned",
+        title=staff_title,
         body=f"You are matched with {student_alias}. You will not see their identity unless they accept after 7 days.",
     )
     _audit(actor_role, actor_ref, "assigned", mid, f"alias {student_alias}/{mentor_alias}")
-    return student_view(mid, student_id), "Anonymous counseling started."
+    return student_view(mid, student_id), done_msg
 
 
 def student_view(mentorship_id, student_id):

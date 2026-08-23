@@ -56,6 +56,22 @@ export function formatChanges(changes) {
   return parts.join(" · ") || "No change";
 }
 
+export function formatDateTime(value) {
+  if (value == null || value === "") return "";
+  const text = String(value).trim();
+  if (!text) return "";
+  if (!/^\d{4}-\d{2}-\d{2}/.test(text) && Number.isNaN(Date.parse(text))) return text;
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return text;
+  return parsed.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export function cellText(value) {
   if (value == null || value === "") return "—";
   if (typeof value === "boolean") return value ? "Yes" : "No";
@@ -66,6 +82,9 @@ export function cellText(value) {
   if (typeof value === "string") {
     const text = value.trim();
     if (!text) return "—";
+    if (/^\d{4}-\d{2}-\d{2}T/.test(text)) {
+      return formatDateTime(text) || text;
+    }
     if ((text.startsWith("{") && text.endsWith("}")) || (text.startsWith("[") && text.endsWith("]"))) {
       try {
         return cellText(JSON.parse(text));

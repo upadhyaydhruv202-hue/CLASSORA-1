@@ -30,6 +30,7 @@ from src.success.ops import build_report, parse_import_csv, report_rows, search_
 from src.success.risk_service import get_current_risk
 from src.success.staff_auth import activate_staff, invite_staff, list_staff_invites
 from src.success.twin import build_twin
+from src.academic import service as academic
 
 router = APIRouter()
 
@@ -60,7 +61,7 @@ def _support_role(session: dict) -> bool:
 
 def _modules(role: str) -> list[str]:
     options = []
-    if role in ("teacher", "administrator", "counsellor"):
+    if role in ("teacher", "administrator"):
         options += [
             "Institution success", "Counsellor", "Student 360", "Early warning", "Recommender",
             "Human review", "Cases", "Outcomes", "Recovery", "What-if", "Digital Twin",
@@ -68,10 +69,18 @@ def _modules(role: str) -> list[str]:
             "Health", "Settings", "Assistant", "Notifications", "Communication", "Appointments",
             "Academic", "Attendance intel", "LMS",
         ]
+    if role == "counsellor":
+        options += [
+            "Counsellor", "Student 360", "Early warning", "Recommender",
+            "Cases", "Outcomes", "Recovery", "Digital Twin",
+            "Explainable AI", "Predictive Twin", "Reports", "Search", "Import", "Monitoring",
+            "Health", "Settings", "Assistant", "Notifications", "Communication", "Appointments",
+            "Academic", "Attendance intel", "LMS",
+        ]
     if role in ("faculty", "mentor"):
         options += ["Digital Twin", "Explainable AI", "Predictive Twin", "What-if", "Notifications"]
     if role == "administrator":
-        options += ["Ecosystem analytics", "Mentorship admin", "Complaint Management"]
+        options += ["Ecosystem analytics", "Mentorship admin", "Complaint Management", "Academic Resources"]
     if role in ("faculty", "mentor", "teacher"):
         options += ["Faculty portal"]
     if role in ("faculty", "mentor", "counsellor"):
@@ -81,8 +90,37 @@ def _modules(role: str) -> list[str]:
     if role == "student":
         options = ["Student snapshot", "My Digital Twin", "My Risk", "AI Explanation", "Recovery AI",
                    "Future trajectory", "Interventions", "Notifications", "Ask for support",
-                   "Anonymous Mentorship", "Account"]
+                   "Anonymous Mentorship", "Academic Resources", "Account"]
     return list(dict.fromkeys(options))
+
+
+def _appointment_kind(value) -> str:
+    raw = value.get("kind") if isinstance(value, dict) else value
+    text = str(raw or "").strip().lower()
+    if text in ("mentor", "mentoring", "mentorship"):
+        return "mentor"
+    if text in ("counsellor", "counselor", "counselling", "counseling", ""):
+        return "counsellor"
+    return ""
+
+
+def _can_connect_appointment(role: str, kind: str) -> bool:
+    if role == "administrator":
+        return True
+    if kind == "counsellor":
+        return role == "counsellor"
+    if kind == "mentor":
+        return role in ("mentor", "faculty")
+    return False
+
+
+def _visible_appointments(role: str, appointments):
+    rows = list(appointments or [])
+    if role == "counsellor":
+        return [row for row in rows if _appointment_kind(row) == "counsellor"]
+    if role in ("mentor", "faculty"):
+        return [row for row in rows if _appointment_kind(row) == "mentor"]
+    return rows
 
 
 def _alerts(profiles):
@@ -281,6 +319,72 @@ class AlertResolveIn(BaseModel):
     source: str = "risk-model"
 
 
+class AcademicResourceIn(BaseModel):
+    title: str = ""
+    description: str = ""
+    year_id: str = ""
+    yearId: str = ""
+    semester_id: str = ""
+    semesterId: str = ""
+    subject_id: int | str | None = None
+    subjectId: int | str | None = None
+    resource_type_id: int | str | None = None
+    resourceTypeId: int | str | None = None
+    source_id: int | str | None = None
+    sourceId: int | str | None = None
+    original_url: str = ""
+    originalUrl: str = ""
+    resource_format: str = ""
+    resourceFormat: str = ""
+    tags: str = ""
+    display_order: int | None = None
+    displayOrder: int | None = None
+    is_active: bool | None = None
+    isActive: bool | None = None
+
+
+class AcademicSubjectIn(BaseModel):
+    name: str = ""
+    code: str = ""
+    description: str = ""
+    year_id: str = ""
+    yearId: str = ""
+    semester_id: str = ""
+    semesterId: str = ""
+    status: str = ""
+
+
+class AcademicSourceIn(BaseModel):
+    name: str = ""
+    code: str = ""
+    website_url: str = ""
+    websiteUrl: str = ""
+    description: str = ""
+    is_active: bool | None = None
+    isActive: bool | None = None
+
+
+class AcademicTypeIn(BaseModel):
+    name: str = ""
+    code: str = ""
+    display_order: int | None = None
+    displayOrder: int | None = None
+
+
+class AcademicReportIn(BaseModel):
+    reason: str = "Resource link is not working"
+
+
+class AcademicReportReviewIn(BaseModel):
+    status: str = ""
+    decision: str = ""
+
+
+class AcademicSyncIn(BaseModel):
+    source_id: str | int | None = None
+    sourceId: str | int | None = None
+
+
 @router.post("/api/auth/teacher/forgot")
 def teacher_forgot(body: PasswordResetIn):
     if _cloud():
@@ -414,7 +518,7 @@ def success_workspace(session: dict = Depends(require_session)):
                 own_outcomes.append(row)
         academic = store.select("academic_records", student_id=sid) or []
         lms = store.select("lms_events", student_id=sid) or []
-        appointments = store.select("appointments", student_id=sid) or []
+        appointments = _visible_appointments(role, store.select("appointments", student_id=sid) or [])
         tasks = store.select("recovery_tasks", student_id=sid) or []
         alerts = _alerts(profiles)
         return clean({
@@ -483,6 +587,8 @@ def success_workspace(session: dict = Depends(require_session)):
         elif staff.get("staff_id") is not None:
             notes = list(for_recipient(role=role, recipient_id=staff.get("staff_id")) or [])
             notes += mentorship.notifications_for(staff_id=staff.get("staff_id"), role=role) or []
+        elif role == "teacher" and teacher_id is not None:
+            notes = list(for_recipient(role="teacher", recipient_id=teacher_id) or [])
     except Exception:
         notes = []
     inst = None
@@ -527,6 +633,7 @@ def success_workspace(session: dict = Depends(require_session)):
     lms = bundle.get("lms") or []
     cases = bundle.get("cases") or []
     appointments = store.select("appointments", **({"student_id": student_id} if student_id is not None else {})) or []
+    appointments = _visible_appointments(role, appointments)
     tasks = store.select("recovery_tasks", **({"student_id": student_id} if student_id is not None else {})) or []
     outcomes = store.select("intervention_outcomes") or []
     stored_alerts = store.select("alerts") or [] if role != "student" else []
@@ -625,26 +732,61 @@ def success_help_ack(body: HelpAckIn, session: dict = Depends(require_session)):
 @router.post("/api/success/appointment")
 def success_appointment(body: AppointmentIn, session: dict = Depends(require_role("student"))):
     student = session["student_data"]
+    kind = _appointment_kind(body.kind)
+    if kind not in ("counsellor", "mentor"):
+        raise HTTPException(status_code=400, detail="Choose counselling or mentoring.")
     saved = store.insert("appointments", {
         "student_id": student["student_id"],
-        "staff_name": body.kind,
-        "kind": body.kind,
+        "staff_name": kind,
+        "kind": kind,
         "starts_at": body.starts_at or datetime.now().isoformat(timespec="minutes"),
         "status": "requested",
     })
     _must_save(saved, "Could not save the appointment request.")
+    if kind == "mentor":
+        notify(
+            role="mentor",
+            recipient_id="caseload",
+            title="Mentoring session requested",
+            body=f"Student ID {student.get('student_id')} asked for a mentor. Open Appointments to connect privately.",
+        )
+        notify(
+            role="student",
+            recipient_id=student.get("student_id"),
+            title="Mentoring request sent",
+            body="A mentor will review your request. Watch Notifications, then open Anonymous Mentorship when it is accepted.",
+        )
+        return {
+            "ok": True,
+            "kind": kind,
+            "status": "requested",
+            "appointment": saved[0],
+            "detail": "Mentoring requested. Wait for a mentor to open a private chat.",
+        }
     notify(
         role="counsellor",
         recipient_id="caseload",
-        title="Counsellor meeting requested",
-        body=f"Student ID {student.get('student_id')} requested a meeting. Open Appointments to connect privately.",
+        title="Counselling session requested",
+        body=f"Student ID {student.get('student_id')} asked for counselling. Open Appointments to connect privately.",
     )
-    return {"ok": True, "detail": "Appointment requested. Wait for the counsellor to open a private chat."}
+    notify(
+        role="student",
+        recipient_id=student.get("student_id"),
+        title="Counselling request sent",
+        body="A counsellor will review your request. Watch Notifications, then open Anonymous Mentorship when it is accepted.",
+    )
+    return {
+        "ok": True,
+        "kind": kind,
+        "status": "requested",
+        "appointment": saved[0],
+        "detail": "Counselling requested. Wait for a counsellor to open a private chat.",
+    }
 
 
 @router.post("/api/success/appointment/connect")
 def success_appointment_connect(body: AppointmentConnectIn, session: dict = Depends(require_session)):
-    """Counsellor accepts a named request by opening alias-only mentorship chat."""
+    """Accept a counselling or mentoring request by opening alias-only chat."""
     role = session.get("user_role")
     if role not in ("counsellor", "administrator", "mentor", "faculty"):
         raise HTTPException(status_code=403, detail="Only support staff can open the private chat.")
@@ -655,18 +797,34 @@ def success_appointment_connect(body: AppointmentConnectIn, session: dict = Depe
     if not rows:
         raise HTTPException(status_code=404, detail="Appointment not found.")
     appt = rows[0]
+    kind = _appointment_kind(appt)
+    if not _can_connect_appointment(role, kind):
+        if kind == "counsellor":
+            raise HTTPException(status_code=403, detail="Only a counsellor can accept a counselling request.")
+        if kind == "mentor":
+            raise HTTPException(status_code=403, detail="Only a mentor can accept a mentoring request.")
+        raise HTTPException(status_code=403, detail="You cannot accept this request.")
     try:
         student_id = int(appt.get("student_id"))
     except (TypeError, ValueError):
         raise HTTPException(status_code=400, detail="Appointment is missing a student.")
     prefer = staff_id if role != "administrator" else None
+    if kind == "mentor":
+        goal = "Private mentoring chat after student request."
+        notes = "Private mentoring chat opened in Anonymous Mentorship."
+        detail_fallback = "Mentoring chat opened. Continue in Anonymous Mentorship. Messages use aliases only."
+    else:
+        goal = "Private counselling chat after student request."
+        notes = "Private counselling chat opened in Anonymous Mentorship."
+        detail_fallback = "Counselling chat opened. Continue in Anonymous Mentorship. Messages use aliases only."
     row, msg = mentorship.assign_mentorship(
         student_id,
         role,
         staff_id,
-        goal="Private counsellor chat after student request.",
+        goal=goal,
         session_state=session,
         prefer_staff_id=prefer,
+        kind=kind,
     )
     if not row:
         raise HTTPException(status_code=400, detail=msg)
@@ -675,11 +833,13 @@ def success_appointment_connect(body: AppointmentConnectIn, session: dict = Depe
         view = mentorship.faculty_view(row.get("mentorshipId"), staff_id) or row
     store.update("appointments", {"id": body.appointment_id}, {
         "status": "connected",
-        "notes": "Private alias chat opened in Anonymous Mentorship.",
+        "notes": notes,
     })
     return {
         "ok": True,
-        "detail": msg or "Private chat opened. Continue in Anonymous Mentorship. Messages use aliases only.",
+        "kind": kind,
+        "status": "connected",
+        "detail": msg or detail_fallback,
         "mentorship": clean(view),
         "student_alias": (view or {}).get("anonymousStudentId"),
         "mentor_alias": (view or {}).get("anonymousMentorId"),
@@ -1182,3 +1342,241 @@ def decide_complaint(complaint_id: str, body: DecideIn, session: dict = Depends(
     if row is None and msg:
         raise HTTPException(status_code=400, detail=msg)
     return {"ok": True, "detail": msg, "complaint": clean(row)}
+
+
+def _academic_admin(session: dict) -> bool:
+    return session.get("user_role") == "administrator"
+
+
+def _academic_viewer(session: dict) -> bool:
+    return session.get("user_role") in (
+        "student", "teacher", "administrator", "counsellor", "faculty", "mentor",
+    )
+
+
+def _require_academic_viewer(session: dict):
+    if not _academic_viewer(session):
+        raise HTTPException(status_code=403, detail="Not allowed for this portal.")
+
+
+def _require_academic_admin(session: dict):
+    if not _academic_admin(session):
+        raise HTTPException(status_code=403, detail="Administrators only.")
+
+
+@router.get("/api/academic-years")
+def academic_years(session: dict = Depends(require_session)):
+    _require_academic_viewer(session)
+    return {"years": academic.years()}
+
+
+@router.get("/api/academic-semesters")
+def academic_semesters(year: str = "", session: dict = Depends(require_session)):
+    _require_academic_viewer(session)
+    return {"semesters": academic.semesters(academic.resolve_year_id(year) or year or None)}
+
+
+@router.get("/api/academic-subjects")
+def academic_subjects(year: str = "", semester: str = "", session: dict = Depends(require_session)):
+    _require_academic_viewer(session)
+    err = academic.ensure_catalog()
+    if err:
+        return {"subjects": [], "detail": err, "installed": False}
+    return {
+        "subjects": academic.subjects(
+            year_id=academic.resolve_year_id(year) or year or None,
+            semester_id=academic.resolve_semester_id(semester) or semester or None,
+            include_inactive=_academic_admin(session),
+        ),
+        "installed": True,
+    }
+
+
+@router.get("/api/academic-resource-types")
+def academic_resource_types(session: dict = Depends(require_session)):
+    _require_academic_viewer(session)
+    err = academic.ensure_catalog()
+    if err:
+        return {"types": [], "detail": err, "installed": False}
+    return {"types": academic.types(include_inactive=_academic_admin(session)), "installed": True}
+
+
+@router.get("/api/academic-sources")
+def academic_sources(session: dict = Depends(require_session)):
+    _require_academic_viewer(session)
+    err = academic.ensure_catalog()
+    if err:
+        return {"sources": [], "detail": err, "installed": False}
+    return {"sources": academic.sources(include_inactive=_academic_admin(session)), "installed": True}
+
+
+@router.get("/api/academic-resources/catalog")
+def academic_catalog(year: str = "", semester: str = "", session: dict = Depends(require_session)):
+    _require_academic_viewer(session)
+    return clean(academic.catalog(
+        year_id=academic.resolve_year_id(year) or year or None,
+        semester_id=academic.resolve_semester_id(semester) or semester or None,
+        include_inactive=_academic_admin(session),
+    ))
+
+
+@router.post("/api/academic-resources/sync")
+def academic_resource_sync(body: AcademicSyncIn | None = None, session: dict = Depends(require_session)):
+    _require_academic_admin(session)
+    payload = body.model_dump() if body else {}
+    report, msg = academic.sync_registered_sources(
+        source_id=payload.get("source_id") or payload.get("sourceId"),
+        actor=_actor(session),
+    )
+    if report is None:
+        raise HTTPException(status_code=400, detail=msg)
+    return {"ok": True, "report": clean(report)}
+
+
+@router.get("/api/academic-resources")
+def academic_resource_list(
+    year: str = "",
+    semester: str = "",
+    subject: str = "",
+    type: str = "",
+    source: str = "",
+    search: str = "",
+    sort: str = "recent",
+    page: int = 1,
+    limit: int = 20,
+    session: dict = Depends(require_session),
+):
+    _require_academic_viewer(session)
+    return clean(academic.list_resources(
+        year_id=year or None,
+        semester_id=semester or None,
+        subject_id=subject or None,
+        type_code=type or None,
+        source_code=source or None,
+        search=search,
+        sort=sort,
+        page=page,
+        limit=limit,
+        include_inactive=_academic_admin(session),
+    ))
+
+
+@router.get("/api/academic-resources/{resource_id}")
+def academic_resource_one(resource_id: str, session: dict = Depends(require_session)):
+    _require_academic_viewer(session)
+    row, msg = academic.get_resource(resource_id, include_inactive=_academic_admin(session))
+    if not row:
+        raise HTTPException(status_code=404, detail=msg)
+    return clean(row)
+
+
+@router.post("/api/academic-resources")
+def academic_resource_create(body: AcademicResourceIn, session: dict = Depends(require_session)):
+    _require_academic_admin(session)
+    row, msg = academic.create_resource(body.model_dump(), actor=_actor(session))
+    if not row:
+        raise HTTPException(status_code=400, detail=msg)
+    return {"ok": True, "resource": clean(row)}
+
+
+@router.put("/api/academic-resources/{resource_id}")
+def academic_resource_update(resource_id: str, body: AcademicResourceIn, session: dict = Depends(require_session)):
+    _require_academic_admin(session)
+    row, msg = academic.update_resource(resource_id, body.model_dump(exclude_unset=True))
+    if not row:
+        code = 404 if msg == "Resource not found." else 400
+        raise HTTPException(status_code=code, detail=msg)
+    return {"ok": True, "resource": clean(row)}
+
+
+@router.delete("/api/academic-resources/{resource_id}")
+def academic_resource_delete(resource_id: str, session: dict = Depends(require_session)):
+    _require_academic_admin(session)
+    row, msg = academic.set_resource_active(resource_id, False)
+    if not row:
+        code = 404 if msg == "Resource not found." else 400
+        raise HTTPException(status_code=code, detail=msg)
+    return {"ok": True, "resource": clean(row), "detail": "Resource deactivated."}
+
+
+@router.post("/api/academic-resources/{resource_id}/verify")
+def academic_resource_verify(resource_id: str, session: dict = Depends(require_session)):
+    _require_academic_admin(session)
+    row, msg = academic.verify_resource(resource_id)
+    if not row:
+        raise HTTPException(status_code=404, detail=msg)
+    return {"ok": True, "resource": clean(row)}
+
+
+@router.post("/api/academic-resources/{resource_id}/report")
+def academic_resource_report(resource_id: str, body: AcademicReportIn, session: dict = Depends(require_role("student"))):
+    student_id = (session.get("student_data") or {}).get("student_id")
+    if student_id is None:
+        raise HTTPException(status_code=403, detail="Not allowed for this portal.")
+    row, msg = academic.report_broken(resource_id, student_id=student_id, reason=body.reason)
+    if not row:
+        raise HTTPException(status_code=400, detail=msg)
+    return {"ok": True, "report": clean(row), "detail": "Thanks. We recorded that this link may be unavailable."}
+
+
+@router.post("/api/academic-subjects")
+def academic_subject_create(body: AcademicSubjectIn, session: dict = Depends(require_session)):
+    _require_academic_admin(session)
+    row, msg = academic.create_subject(body.model_dump())
+    if not row:
+        raise HTTPException(status_code=400, detail=msg)
+    return {"ok": True, "subject": clean(row)}
+
+
+@router.put("/api/academic-subjects/{subject_id}")
+def academic_subject_update(subject_id: str, body: AcademicSubjectIn, session: dict = Depends(require_session)):
+    _require_academic_admin(session)
+    row, msg = academic.update_subject(subject_id, body.model_dump(exclude_unset=True))
+    if not row:
+        code = 404 if msg == "Subject not found." else 400
+        raise HTTPException(status_code=code, detail=msg)
+    return {"ok": True, "subject": clean(row)}
+
+
+@router.post("/api/academic-sources")
+def academic_source_create(body: AcademicSourceIn, session: dict = Depends(require_session)):
+    _require_academic_admin(session)
+    row, msg = academic.create_source(body.model_dump())
+    if not row:
+        raise HTTPException(status_code=400, detail=msg)
+    return {"ok": True, "source": clean(row)}
+
+
+@router.put("/api/academic-sources/{source_id}")
+def academic_source_update(source_id: str, body: AcademicSourceIn, session: dict = Depends(require_session)):
+    _require_academic_admin(session)
+    row, msg = academic.update_source(source_id, body.model_dump(exclude_unset=True))
+    if not row:
+        code = 404 if msg == "Source not found." else 400
+        raise HTTPException(status_code=code, detail=msg)
+    return {"ok": True, "source": clean(row)}
+
+
+@router.post("/api/academic-resource-types")
+def academic_type_create(body: AcademicTypeIn, session: dict = Depends(require_session)):
+    _require_academic_admin(session)
+    row, msg = academic.create_type(body.model_dump())
+    if not row:
+        raise HTTPException(status_code=400, detail=msg)
+    return {"ok": True, "type": clean(row)}
+
+
+@router.get("/api/academic-resource-reports")
+def academic_report_list(status: str = "", session: dict = Depends(require_session)):
+    _require_academic_admin(session)
+    return {"reports": clean(academic.list_reports(status=status or None))}
+
+
+@router.post("/api/academic-resource-reports/{report_id}/review")
+def academic_report_review(report_id: str, body: AcademicReportReviewIn, session: dict = Depends(require_session)):
+    _require_academic_admin(session)
+    row, msg = academic.review_report(report_id, body.decision or body.status)
+    if not row:
+        code = 404 if msg == "Report not found." else 400
+        raise HTTPException(status_code=code, detail=msg)
+    return {"ok": True, "report": clean(row)}

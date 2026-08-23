@@ -319,6 +319,10 @@
   grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
+.co-nav-5 {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .co-nav-4 {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
@@ -652,8 +656,73 @@
   margin: 0.2rem 0 0.35rem;
 }
 
+.co-resources .co-field-error {
+  margin: -0.35rem 0 0.5rem;
+  color: var(--co-danger);
+  font-size: 0.82rem;
+}
+
+.co-resource-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.co-resource-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.co-resource-card h3 {
+  margin: 0.35rem 0 0.4rem;
+  font-size: 1.05rem;
+  line-height: 1.35;
+}
+
+.co-resource-type {
+  display: inline-flex;
+  margin: 0;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: var(--co-accent);
+  color: var(--co-primary);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.co-resource-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+}
+
+.co-resource-skel {
+  min-height: 11rem;
+  border-radius: 16px;
+  background: linear-gradient(90deg, var(--co-bg-2), #fff, var(--co-bg-2));
+  background-size: 200% 100%;
+  animation: co-skel 1.2s ease-in-out infinite;
+}
+
+@keyframes co-skel {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .co-resource-skel { animation: none; }
+}
+
 @media (max-width: 900px) {
-  .co-nav-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .co-nav-6,
+  .co-nav-5 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .co-resource-filters,
+  .co-resource-grid { grid-template-columns: 1fr; }
   .co-chips,
   .co-portal-grid { grid-template-columns: 1fr; }
   .classroom-root.has-risk .co-shell {
@@ -680,7 +749,7 @@
     box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.06);
     padding: 0.4rem 0.45rem calc(0.45rem + env(safe-area-inset-bottom));
     margin: 0;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .co-student-nav button {
     min-height: 48px;
@@ -693,7 +762,7 @@
     color: var(--co-primary);
     border: 1px solid #bfdbfe;
   }
-  .co-shell { padding-bottom: 6.5rem; }
+  .co-shell { padding-bottom: 8.5rem; }
   .co-portal:hover { transform: none; }
 }
 

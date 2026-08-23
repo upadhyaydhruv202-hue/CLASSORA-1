@@ -11,6 +11,7 @@ Run order:
 3. `supabase/schema_success.sql`
 4. `supabase/schema_mentorship.sql`
 5. `supabase/schema_moderation.sql`
+6. `supabase/schema_academic_resources.sql`
 
 ---
 
@@ -93,6 +94,22 @@ Identity stripping for faculty vs student views is done in `src/mentorship/servi
 | `moderation_audit_logs` | Audit |
 
 SQL comments state authorization is enforced in Python. RLS is on, with `anon`/`authenticated` policies `using (true)` for this project style.
+
+---
+
+## Academic resources (`schema_academic_resources.sql`)
+
+Additive directory of **metadata + original URLs**. Does not scrape or re-host PDFs.
+
+| Table | Purpose |
+| --- | --- |
+| `academic_resource_sources` | Senior websites (Brain Spot, LDRP, ColleGPT, later sources) |
+| `academic_resource_types` | Catalog-driven types (`NOTES`, `PYQ`, …). New types do not require frontend changes |
+| `academic_resource_subjects` | Hub subjects (`year_id` `YEAR_1`–`YEAR_4`, `semester_id` `SEM_1`–`SEM_8`) |
+| `academic_resources` | Title, original URL, format, source, type, subject. Unique `(subject_id, resource_type_id, original_url)` |
+| `academic_resource_reports` | Student broken-link reports (`PENDING` / `REVIEWED` / `RESOLVED` / `DISMISSED`) |
+
+Indexes cover year, semester, subject, type, source, and `is_active`. Inactive resources and inactive sources are hidden from students. Without this SQL on Supabase, the hub APIs return an install message; the local JSON store can still persist rows when Supabase is not configured.
 
 ---
 

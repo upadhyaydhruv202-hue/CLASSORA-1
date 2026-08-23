@@ -3,7 +3,14 @@
 import unittest
 
 from src.moderation import policy as P
-from src.moderation.service import admin_decide, admin_open, create_complaint, request_information, review_appeal
+from src.moderation.service import (
+    admin_decide,
+    admin_open,
+    create_complaint,
+    public_complaint_id,
+    request_information,
+    review_appeal,
+)
 
 
 class FacultyCannotExecuteTests(unittest.TestCase):
@@ -132,6 +139,15 @@ class EvidenceAndComplaintCreateTests(unittest.TestCase):
         self.assertFalse(P.can_execute_moderation("student"))
         self.assertFalse(P.can_create_complaint("student"))
         self.assertFalse(P.can_create_complaint("administrator"))
+
+    def test_public_complaint_id_is_stable_code(self):
+        self.assertEqual(public_complaint_id({
+            "complaint_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "complaint_code": "CMP-AB12CD34",
+        }), "CMP-AB12CD34")
+        derived = public_complaint_id({"complaint_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"})
+        self.assertTrue(derived.startswith("CMP-"))
+        self.assertEqual(derived, public_complaint_id({"complaint_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"}))
 
 
 if __name__ == "__main__":

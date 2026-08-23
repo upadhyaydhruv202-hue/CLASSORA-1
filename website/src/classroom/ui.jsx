@@ -27,7 +27,7 @@ export function HomeHeader() {
       <div className="co-tagline mt-3.5">Intelligent Learning · Connected Classrooms</div>
       <h1 className="co-hero-title">CLASSORA</h1>
       <p className="co-hero-sub">
-        Classora brings students, teachers, and classrooms into one connected digital environment — AI attendance that feels production-ready.
+        Classora brings students, faculty, and classrooms into one connected digital environment — AI attendance that feels production-ready.
       </p>
     </div>
   );
@@ -301,7 +301,7 @@ export function NotifyCard({ title, body, when }) {
 
 export function StretchNav({ items, value, onChange, className = "" }) {
   return (
-    <nav className={`co-nav ${items.length > 4 ? "co-nav-6" : "co-nav-4"} ${className}`}>
+    <nav className={`co-nav ${items.length > 5 ? "co-nav-6" : items.length > 4 ? "co-nav-5" : "co-nav-4"} ${className}`}>
       {items.map((item) => (
         <button
           key={item.id}

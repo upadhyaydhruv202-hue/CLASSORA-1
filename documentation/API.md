@@ -138,6 +138,35 @@ Ban/restrict authorization is enforced in `src/moderation/service.py` and `src/m
 
 ---
 
+## Academic resources
+
+Any signed-in classroom role may **read**. Only **administrators** may create, edit, deactivate, verify, or review reports. Only **students** may report a broken link.
+
+| Method | Path | Auth | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/academic-resources` | Session | Query: `year`, `semester`, `subject`, `type`, `source`, `search`, `sort`, `page`, `limit`. Server-side filter/search. Inactive rows hidden from non-admins |
+| GET | `/api/academic-resources/catalog` | Session | Years, semesters, subjects, types, sources, formats. Seeds source/type catalog if empty |
+| GET | `/api/academic-resources/{id}` | Session | One resource; original URL unchanged |
+| POST | `/api/academic-resources` | Administrator | Create. HTTPS URL required. Duplicate subject+type+URL rejected |
+| PUT | `/api/academic-resources/{id}` | Administrator | Edit metadata / URL / active flag |
+| DELETE | `/api/academic-resources/{id}` | Administrator | Soft-deactivate (not a hard delete) |
+| POST | `/api/academic-resources/{id}/verify` | Administrator | Sets `lastVerifiedAt` |
+| POST | `/api/academic-resources/{id}/report` | Student | Broken-link report; one pending report per student+resource |
+| GET | `/api/academic-years` | Session | Stable ids `YEAR_1`–`YEAR_4` |
+| GET | `/api/academic-semesters` | Session | Optional `year`. Ids `SEM_1`–`SEM_8` |
+| GET | `/api/academic-subjects` | Session | Optional `year`, `semester` |
+| GET | `/api/academic-resource-types` | Session | Catalog-driven |
+| GET | `/api/academic-sources` | Session | Seeded senior websites |
+| POST | `/api/academic-subjects` | Administrator | |
+| PUT | `/api/academic-subjects/{id}` | Administrator | |
+| POST | `/api/academic-sources` | Administrator | |
+| PUT | `/api/academic-sources/{id}` | Administrator | |
+| POST | `/api/academic-resource-types` | Administrator | |
+| GET | `/api/academic-resource-reports` | Administrator | Optional `status` |
+| POST | `/api/academic-resource-reports/{id}/review` | Administrator | `{ decision: REVIEWED\|RESOLVED\|DISMISSED }` |
+
+---
+
 ## OpenAPI
 
 With the API running: http://127.0.0.1:8000/docs (FastAPI Swagger UI) and `/redoc`.

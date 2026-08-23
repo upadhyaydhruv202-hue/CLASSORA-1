@@ -15,7 +15,7 @@ export const landingFeatures = [
   {
     kicker: "01",
     title: "Face and voice attendance",
-    body: "Teachers capture a class photo or a short recording. CLASSORA matches the enrolled roster — not a guessed list.",
+    body: "Faculty capture a class photo or a short recording. CLASSORA matches the enrolled roster — not a guessed list.",
   },
   {
     kicker: "02",
@@ -30,12 +30,12 @@ export const landingFeatures = [
   {
     kicker: "04",
     title: "Three portals, one classroom",
-    body: "Student FaceID, teacher register, and the Success Hub for counsellors and administrators.",
+    body: "Student FaceID, faculty register, and the Success Hub for counsellors and administrators.",
   },
 ];
 
 export const landingStats = [
-  { value: "3", label: "Classroom roles", body: "Student, teacher, and counsellor or admin — one working app." },
+  { value: "3", label: "Classroom roles", body: "Student, faculty, and counsellor or admin — one working app." },
   { value: "5", label: "Pipeline stages", body: "Roster signals through prediction to a human decision." },
   { value: "4", label: "Support paths", body: "Academic, attendance, faculty, and engagement — after review." },
   { value: "0", label: "Automatic actions", body: "Nothing is written as an intervention without a person." },
@@ -110,10 +110,10 @@ export const techNodes = [
 ];
 
 export const impactCapabilities = [
-  { key: "Attendance", body: "Teachers capture class photos or a short recording and match them to the enrolled roster." },
+  { key: "Attendance", body: "Faculty capture class photos or a short recording and match them to the enrolled roster." },
   { key: "Risk score", body: "A deterministic, inspectable support signal — not a diagnosis and not a black box." },
   { key: "Intervention", body: "Cases, mentorship, and complaints exist only after a human reviews them." },
-  { key: "Roles", body: "Student FaceID, teacher register, and counsellor or admin Success Hub in one app." },
+  { key: "Roles", body: "Student FaceID, faculty register, and counsellor or admin Success Hub in one app." },
 ];
 
 export const team = [
