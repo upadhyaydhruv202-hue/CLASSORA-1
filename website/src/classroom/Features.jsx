@@ -96,18 +96,23 @@ export default function SuccessWorkspace({ session, setError, defaultModule, cac
   const [pick, setPick] = useState("");
   const [busy, setBusy] = useState(false);
   const [stalled, setStalled] = useState("");
+  const loadGen = useRef(0);
+  const view = data || cached;
 
   const load = async (force = false) => {
+    const gen = ++loadGen.current;
     try {
       setStalled("");
       const ws = await api.workspace(force);
+      if (gen !== loadGen.current) return;
       setData(ws);
       onCached?.(ws);
       setModule((current) => current || defaultModule || ws.modules?.[0] || "");
       setPick((current) => current || (ws.profiles?.[0] ? String(ws.profiles[0].student_id) : current));
     } catch (err) {
-      setError(err.message);
+      if (gen !== loadGen.current) return;
       setStalled(err.message || "Could not load Success Hub modules.");
+      if (!cached) setError(err.message);
     }
   };
 
@@ -116,8 +121,8 @@ export default function SuccessWorkspace({ session, setError, defaultModule, cac
   }, [cached]);
 
   useEffect(() => {
-    if (!pick && data?.profiles?.[0]) setPick(String(data.profiles[0].student_id));
-  }, [data, pick]);
+    if (!pick && view?.profiles?.[0]) setPick(String(view.profiles[0].student_id));
+  }, [view, pick]);
 
   useEffect(() => {
     if (defaultModule) setModule(defaultModule);
@@ -139,10 +144,10 @@ export default function SuccessWorkspace({ session, setError, defaultModule, cac
   }, []);
 
   const profile = useMemo(
-    () => (data?.profiles || []).find((p) => String(p.student_id) === String(pick)) || data?.mine,
-    [data, pick],
+    () => (view?.profiles || []).find((p) => String(p.student_id) === String(pick)) || view?.mine,
+    [view, pick],
   );
-  const twin = data?.twins?.[String(profile?.student_id)] || data?.twins?.[String(data?.mine?.student_id)];
+  const twin = view?.twins?.[String(profile?.student_id)] || view?.twins?.[String(view?.mine?.student_id)];
 
   const run = async (fn) => {
     setBusy(true);
@@ -161,7 +166,7 @@ export default function SuccessWorkspace({ session, setError, defaultModule, cac
     }
   };
 
-  if (!data) {
+  if (!view) {
     return (
       <p className="text-sm text-[#64748B]">
         {stalled ? `Could not load modules: ${stalled}` : "Loading CLASSORA modules…"}
@@ -169,26 +174,31 @@ export default function SuccessWorkspace({ session, setError, defaultModule, cac
     );
   }
 
-  const showPicker = session.user_role !== "student" && (data.profiles || []).length > 0;
+  const showPicker = session.user_role !== "student" && (view.profiles || []).length > 0;
 
   return (
     <div className="space-y-5">
-      <p className="text-sm text-[#64748B]">{data.disclaimer}</p>
+      <p className="text-sm text-[#64748B]">{view.disclaimer}</p>
       <div className="co-modules">
-        {(data.modules || []).map((name) => (
+        {(view.modules || []).map((name) => (
           <button key={name} type="button" onClick={() => setModule(name)} className={`co-btn ${module === name ? "" : "co-btn-secondary"}`}>
             {name}
           </button>
         ))}
       </div>
       {showPicker && (
-        <select className="co-input max-w-md" value={pick} onChange={(e) => setPick(e.target.value)}>
-          {(data.profiles || []).map((p) => <option key={p.student_id} value={p.student_id}>{p.name} ({p.student_id})</option>)}
-        </select>
+        <div className="space-y-1">
+          <select className="co-input max-w-md" value={pick} onChange={(e) => setPick(e.target.value)}>
+            {(view.profiles || []).map((p) => <option key={p.student_id} value={p.student_id}>{p.name} ({p.student_id})</option>)}
+          </select>
+          {(view.profiles || []).some((p) => String(p.name || "").includes("(Demo)")) && (
+            <p className="text-xs text-[#94A3B8]">Roster includes prototype demo data labeled (Demo).</p>
+          )}
+        </div>
       )}
       <ModuleView
         module={module}
-        data={data}
+        data={view}
         profile={profile}
         twin={twin}
         session={session}
@@ -247,7 +257,7 @@ function ModuleView({ module, data, profile, twin, session, busy, run, onOpenMen
         <Card title="Cases / SLA"><Table rows={data.cases} empty="No open cases." /></Card>
         {session.user_role !== "student" && profile && (
           <Card title="Assign anonymous mentorship">
-            <button disabled={busy} className="co-btn" onClick={() => run(() => api.mentorshipAssign({ student_id: Number(profile.student_id) }))}>Assign mentor</button>
+            <button disabled={busy} className="co-btn" onClick={() => run(() => api.mentorshipAssign({ student_id: Number(profile.student_id), kind: session.user_role === "counsellor" ? "counsellor" : session.user_role === "administrator" ? undefined : "mentor" }))}>{session.user_role === "counsellor" ? "Start counselling session" : "Assign mentor"}</button>
           </Card>
         )}
         {session.user_role === "administrator" && (
@@ -605,7 +615,7 @@ function ModuleView({ module, data, profile, twin, session, busy, run, onOpenMen
   }
 
   if (module === "Predictive Intelligence") {
-    return <PredictiveIntelligence session={session} />;
+    return <PredictiveIntelligence session={session} profile={profile} />;
   }
 
   if (module === "Communities") {
@@ -886,11 +896,11 @@ function HubOps({ module, data, profile, session, busy, run, onOpenMentorship })
             disabled={busy}
             className="co-btn mr-2"
             onClick={() => run(async () => {
-              await api.mentorshipAssign({ student_id: Number(profile.student_id) });
+              await api.mentorshipAssign({ student_id: Number(profile.student_id), kind: session.user_role === "counsellor" ? "counsellor" : "mentor" });
               onOpenMentorship?.();
             })}
           >
-            Assign anonymous mentorship
+            Assign {session.user_role === "counsellor" ? "counselling session" : "anonymous mentorship"}
           </button>
           <p className="mt-2 text-sm text-[#64748B]">Use Report Student to file a conduct report. Identities stay in that existing workflow.</p>
         </Card>
@@ -1022,7 +1032,7 @@ function HealthDesk() {
 function MonitoringDesk({ data, busy, run }) {
   const [health, setHealth] = useState(null);
   useEffect(() => {
-    api.health().then(setHealth).catch(() => {});
+    api.health().then(setHealth).catch(() => setHealth({ ok: false, mode: "unreachable", face_models_ready: false }));
   }, []);
   return (
     <div className="space-y-4">
@@ -1060,34 +1070,46 @@ function MonitoringDesk({ data, busy, run }) {
   );
 }
 
+function applySettingsForm(next = {}, fallback = {}) {
+  return {
+    institution_name: next.institution_name || fallback.institution_name || "",
+    support_note: next.support_note || fallback.support_note || "",
+  };
+}
+
 function SettingsDesk({ data, settings, session, busy, run }) {
-  const [form, setForm] = useState({
-    institution_name: settings.institution_name || "",
-    support_note: settings.support_note || "",
-  });
+  const [form, setForm] = useState(() => applySettingsForm(settings));
   const [loadErr, setLoadErr] = useState("");
-  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
   const dirtyRef = useRef(false);
+  const skipWorkspaceRef = useRef(false);
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
   useEffect(() => {
-    if (dirtyRef.current) return undefined;
+    let cancelled = false;
     api.successSettings().then((res) => {
-      if (dirtyRef.current) return;
-      const next = res.settings || {};
-      setForm({
-        institution_name: next.institution_name || "",
-        support_note: next.support_note || "",
+      if (cancelled || dirtyRef.current) return;
+      setForm((current) => {
+        const next = applySettingsForm(res.settings || {});
+        if (!next.institution_name && current.institution_name) return current;
+        return next;
       });
       setLoadErr("");
     }).catch((error) => {
-      if (dirtyRef.current) return;
-      setForm({
-        institution_name: settings.institution_name || "",
-        support_note: settings.support_note || "",
-      });
+      if (cancelled || dirtyRef.current) return;
+      setForm((current) => applySettingsForm(settingsRef.current, current));
       setLoadErr(error.message);
     });
+    return () => { cancelled = true; };
+  }, []);
+  useEffect(() => {
+    if (dirtyRef.current || skipWorkspaceRef.current) return undefined;
+    const name = settings.institution_name || "";
+    const note = settings.support_note || "";
+    if (!name && !note) return undefined;
+    setForm({ institution_name: name, support_note: note });
     return undefined;
-  }, [settings.institution_name, settings.support_note, dirty]);
+  }, [settings.institution_name, settings.support_note]);
   const admin = session.user_role === "administrator";
   return (
     <div className="space-y-4">
@@ -1098,7 +1120,7 @@ function SettingsDesk({ data, settings, session, busy, run }) {
           className="mb-3 w-full rounded-2xl border px-4 py-2"
           value={form.institution_name}
           disabled={!admin}
-          onChange={(e) => { dirtyRef.current = true; setDirty(true); setForm({ ...form, institution_name: e.target.value }); }}
+          onChange={(e) => { dirtyRef.current = true; setForm({ ...form, institution_name: e.target.value }); }}
         />
         <label className="mb-2 block text-sm text-[#64748B]">Support note</label>
         <textarea
@@ -1106,14 +1128,30 @@ function SettingsDesk({ data, settings, session, busy, run }) {
           rows={3}
           disabled={!admin}
           value={form.support_note}
-          onChange={(e) => { dirtyRef.current = true; setDirty(true); setForm({ ...form, support_note: e.target.value }); }}
+          onChange={(e) => { dirtyRef.current = true; setForm({ ...form, support_note: e.target.value }); }}
         />
         {admin ? (
-          <button type="button" disabled={busy} className="co-btn" onClick={() => run(async () => {
-            await api.saveSettings(form);
-            dirtyRef.current = false;
-            setDirty(false);
-          })}>Save settings</button>
+          <button
+            type="button"
+            disabled={busy || saving}
+            className="co-btn"
+            onClick={async () => {
+              setSaving(true);
+              setLoadErr("");
+              try {
+                const res = await api.saveSettings(form);
+                dirtyRef.current = false;
+                skipWorkspaceRef.current = true;
+                setForm(applySettingsForm(res.settings || {}, form));
+              } catch (error) {
+                setLoadErr(error.message);
+              } finally {
+                setSaving(false);
+              }
+            }}
+          >
+            Save settings
+          </button>
         ) : (
           <p className="text-sm text-[#64748B]">Only an administrator can change these settings.</p>
         )}
@@ -1217,6 +1255,16 @@ function complaintDisplayRows(rows = []) {
   }));
 }
 
+function mentorshipKind(row) {
+  const kindRaw = String(row?.kind || "").toLowerCase();
+  if (["mentor", "mentoring", "mentorship"].includes(kindRaw)) return "mentor";
+  if (["counsellor", "counselor", "counselling", "counseling"].includes(kindRaw)) return "counsellor";
+  const goal = String(row?.counselingGoal || row?.counseling_goal || "").toLowerCase();
+  if (goal.includes("mentor")) return "mentor";
+  if (goal.includes("counsel")) return "counsellor";
+  return "";
+}
+
 function normalizeMentorship(row) {
   if (!row || typeof row !== "object") return null;
   return {
@@ -1225,6 +1273,7 @@ function normalizeMentorship(row) {
     mentor_alias: row.anonymousMentorId || row.mentor_alias,
     status: row.statusLabel || row.status,
     status_code: row.status,
+    kind: mentorshipKind(row),
     started_at: row.startedAt || row.mentorshipStartDate || row.started_at,
     feedback_due_at: row.feedbackDueAt || row.feedback_due_at,
   };
@@ -1237,11 +1286,12 @@ function MentorshipDesk({ data, session, busy, run, profile }) {
   const [chatBusy, setChatBusy] = useState(false);
   const [chatError, setChatError] = useState("");
   const [live, setLive] = useState(false);
+  const [pickId, setPickId] = useState("");
   const scroller = useRef(null);
   const raw = Array.isArray(data.mentorship) ? data.mentorship : data.mentorship?.open || [];
   const rows = raw.map(normalizeMentorship).filter(Boolean);
   const openRows = rows.filter((row) => !["COMPLETED", "SUSPENDED", "REJECTED"].includes(String(row.status_code || "").toUpperCase()));
-  const first = openRows[0] || rows[0];
+  const first = openRows.find((row) => String(row.mentorship_id) === String(pickId)) || openRows[0] || rows[0];
   const id = first?.mentorship_id;
   const chatClosed = ["COMPLETED", "SUSPENDED", "REJECTED"].includes(String(first?.status_code || "").toUpperCase());
   const admin = data.mentorship_admin;
@@ -1341,9 +1391,23 @@ function MentorshipDesk({ data, session, busy, run, profile }) {
       <Card title="Mentorships">
         <Table
           rows={rows}
-          columns={["mentorship_id", "student_alias", "mentor_alias", "status", "started_at", "feedback_due_at"]}
+          columns={["mentorship_id", "kind", "student_alias", "mentor_alias", "status", "started_at", "feedback_due_at"]}
           empty="No mentorships in this view."
         />
+        {openRows.length > 1 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {openRows.map((row) => (
+              <button
+                key={row.mentorship_id}
+                type="button"
+                className={`co-btn ${String(first?.mentorship_id) === String(row.mentorship_id) ? "" : "co-btn-secondary"}`}
+                onClick={() => setPickId(row.mentorship_id)}
+              >
+                {row.kind === "mentor" ? "Mentoring chat" : row.kind === "counsellor" ? "Counselling chat" : "Open chat"} · {row.student_alias || row.mentor_alias}
+              </button>
+            ))}
+          </div>
+        )}
       </Card>
       {admin && (
         <Card title="Admin overview">
@@ -1367,7 +1431,7 @@ function MentorshipDesk({ data, session, busy, run, profile }) {
         </Card>
       )}
       {session.user_role !== "student" && profile && (
-        <button disabled={busy} className="co-btn" onClick={() => run(() => api.mentorshipAssign({ student_id: Number(profile.student_id) }))}>Assign anonymous mentorship</button>
+        <button disabled={busy} className="co-btn" onClick={() => run(() => api.mentorshipAssign({ student_id: Number(profile.student_id), kind: session.user_role === "counsellor" ? "counsellor" : session.user_role === "administrator" ? undefined : "mentor" }))}>{session.user_role === "counsellor" ? "Start counselling session" : "Assign anonymous mentorship"}</button>
       )}
       {id && (
         <Card title="Private chat">
@@ -1467,8 +1531,8 @@ function ModerationDesk({ data, session, busy, run }) {
               {(meta.execute_actions || meta.actions || ["warning", "restrict", "ban"]).map((a) => <option key={a}>{a}</option>)}
             </select>
             <textarea className="mb-2 w-full rounded-2xl border p-3" rows={2} value={decision.notes} onChange={(e) => setDecision({ ...decision, notes: e.target.value })} />
-            <button disabled={busy} className="mr-2 rounded-full border px-4 py-2 text-sm" onClick={() => run(() => api.openComplaint(decision.complaint_id || firstId))}>Open investigation</button>
-            <button disabled={busy} className="co-btn" onClick={() => run(() => api.decideComplaint(decision.complaint_id || firstId, { action: decision.action, notes: decision.notes }))}>Record decision</button>
+            <button disabled={busy || !(decision.complaint_id || firstId)} className="mr-2 rounded-full border px-4 py-2 text-sm" onClick={() => run(() => api.openComplaint(decision.complaint_id || firstId))}>Open investigation</button>
+            <button disabled={busy || !(decision.complaint_id || firstId)} className="co-btn" onClick={() => run(() => api.decideComplaint(decision.complaint_id || firstId, { action: decision.action, notes: decision.notes }))}>Record decision</button>
           </Card>
           <Card title="Review appeal">
             <input className="mb-2 w-full rounded-2xl border px-4 py-2" placeholder="Appeal ID" value={appealReview.appeal_id || firstAppeal} onChange={(e) => setAppealReview({ ...appealReview, appeal_id: e.target.value })} />
@@ -1534,8 +1598,8 @@ export function AccountPanel({ session, setError }) {
   const [msg, setMsg] = useState("");
   useEffect(() => {
     if (session.user_role !== "teacher") return;
-    api.teacherInvites().then(setInvites).catch(() => {});
-    api.loginHistory().then(setHistory).catch(() => {});
+    api.teacherInvites().then(setInvites).catch((err) => setError(err.message));
+    api.loginHistory().then(setHistory).catch((err) => setError(err.message));
   }, [session]);
   return (
     <div className="grid gap-4 md:grid-cols-2">

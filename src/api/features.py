@@ -89,7 +89,10 @@ def _modules(role: str) -> list[str]:
             "CLASSORA Rewards", "Predictive Intelligence",
         ]
     if role in ("faculty", "mentor"):
-        options += ["Digital Twin", "Explainable AI", "Predictive Twin", "What-if", "Notifications", "CLASSORA Rewards", "Predictive Intelligence"]
+        options += [
+            "Digital Twin", "Explainable AI", "Predictive Twin", "What-if",
+            "Appointments", "Notifications", "CLASSORA Rewards", "Predictive Intelligence",
+        ]
     if role == "merchant":
         options = ["Merchant Rewards"]
     if role == "administrator":
@@ -161,11 +164,25 @@ def _alerts(profiles):
     return uniq
 
 
+def _settings_from_row(row):
+    if not isinstance(row, dict):
+        return settings_payload(row)
+    nested = settings_payload(row.get("settings"))
+    if nested.get("institution_name") or nested.get("support_note"):
+        return nested
+    return settings_payload(row)
+
+
 def _hub_settings():
     rows = store.select("institution_settings") or []
     if not rows:
         return {"institution_name": "", "support_note": ""}
-    return settings_payload(rows[0].get("settings"))
+    chosen = None
+    for row in rows:
+        if row.get("id") == 1 or str(row.get("id")) == "1":
+            chosen = row
+            break
+    return _settings_from_row(chosen if chosen is not None else rows[0])
 
 
 def _known_student_ids():
@@ -237,7 +254,7 @@ class HelpAckIn(BaseModel):
 
 
 class AppointmentIn(BaseModel):
-    kind: str = "counsellor"
+    kind: str = ""
     starts_at: str | None = None
 
 
@@ -269,6 +286,7 @@ class AssistantIn(BaseModel):
 class MentorshipAssignIn(BaseModel):
     student_id: int
     goal: str | None = None
+    kind: str | None = None
 
 
 class MessageIn(BaseModel):
@@ -479,7 +497,7 @@ def staff_activate(body: ActivateIn):
 def teacher_password(body: PasswordChangeIn, session: dict = Depends(require_role("teacher"))):
     teacher_id = session["teacher_data"]["teacher_id"]
     if _cloud():
-        ok, msg = cloud_change_password(teacher_id, body.current_password, body.new_password, body.confirm_password)
+        ok, msg = cloud_change_password(teacher_id, body.current_password, body.new_password, body.confirm_password, session_state=session)
     else:
         ok, msg = local.change_teacher_password(teacher_id, body.current_password, body.new_password, body.confirm_password)
     if not ok:
@@ -491,7 +509,7 @@ def teacher_password(body: PasswordChangeIn, session: dict = Depends(require_rol
 def teacher_invite(body: InviteIn, session: dict = Depends(require_role("teacher"))):
     teacher_id = session["teacher_data"]["teacher_id"]
     if _cloud():
-        token, msg = cloud_invite(body.invited_name, body.invited_username, teacher_id)
+        token, msg = cloud_invite(body.invited_name, body.invited_username, teacher_id, session_state=session)
     else:
         token, msg = local.create_teacher_invite(body.invited_name, body.invited_username, teacher_id)
     if not token:
@@ -502,7 +520,7 @@ def teacher_invite(body: InviteIn, session: dict = Depends(require_role("teacher
 @router.get("/api/teacher/invites")
 def teacher_invites(session: dict = Depends(require_role("teacher"))):
     teacher_id = session["teacher_data"]["teacher_id"]
-    rows = cloud_list_invites(teacher_id) if _cloud() else local.list_teacher_invites(teacher_id)
+    rows = cloud_list_invites(teacher_id, session_state=session) if _cloud() else local.list_teacher_invites(teacher_id)
     return clean(rows)
 
 
@@ -664,7 +682,7 @@ def success_workspace(session: dict = Depends(require_session)):
     inst = None
     if role == "teacher" and teacher_id is not None:
         try:
-            bundle_i = load_teacher_institution(teacher_id)
+            bundle_i = load_teacher_institution(teacher_id, session_state=session)
             inst = build_metrics(apply_filters(bundle_i))
         except Exception:
             inst = None
@@ -822,6 +840,8 @@ def success_help_ack(body: HelpAckIn, session: dict = Depends(require_session)):
 @router.post("/api/success/appointment")
 def success_appointment(body: AppointmentIn, session: dict = Depends(require_role("student"))):
     student = session["student_data"]
+    if not str(body.kind or "").strip():
+        raise HTTPException(status_code=400, detail="Choose counselling or mentoring.")
     kind = _appointment_kind(body.kind)
     if kind not in ("counsellor", "mentor"):
         raise HTTPException(status_code=400, detail="Choose counselling or mentoring.")
@@ -829,7 +849,7 @@ def success_appointment(body: AppointmentIn, session: dict = Depends(require_rol
         "student_id": student["student_id"],
         "staff_name": kind,
         "kind": kind,
-        "starts_at": body.starts_at or datetime.now().isoformat(timespec="minutes"),
+        "starts_at": body.starts_at or utc_now(),
         "status": "requested",
     })
     _must_save(saved, "Could not save the appointment request.")
@@ -976,7 +996,7 @@ def success_case(body: CaseIn, session: dict = Depends(require_session)):
         "status": "open",
         "intervention_name": body.intervention_name,
         "notes": body.notes,
-        "deadline": datetime.now().isoformat(),
+        "deadline": utc_now(),
     })
     _must_save(saved, "Could not create the case.")
     pending = store.select("intervention_recommendations", student_id=body.student_id) or []
@@ -987,6 +1007,18 @@ def success_case(body: CaseIn, session: dict = Depends(require_session)):
             "status": "accepted",
             "reviewer": _actor(session),
         })
+    notify(
+        role="counsellor",
+        recipient_id="caseload",
+        title="Intervention case opened",
+        body=f"Student ID {body.student_id}: {body.intervention_name}. Open Cases.",
+    )
+    notify(
+        role="student",
+        recipient_id=body.student_id,
+        title="A support case was opened",
+        body="Staff opened a support case from your recorded attendance and academic picture. This is not a disciplinary record.",
+    )
     return {"ok": True, "detail": "Case opened."}
 
 
@@ -1010,9 +1042,21 @@ def success_outcome(body: OutcomeIn, session: dict = Depends(require_session)):
     if case_id is not None:
         store.update("intervention_cases", {"id": case_id}, {
             "status": "closed",
-            "closed_at": datetime.now().isoformat(),
+            "closed_at": utc_now(),
             "closure_reason": body.result or "improved",
         })
+    notify(
+        role="counsellor",
+        recipient_id="caseload",
+        title="Intervention outcome recorded",
+        body=f"Student ID {body.student_id}: {body.result or 'improved'}.",
+    )
+    notify(
+        role="student",
+        recipient_id=body.student_id,
+        title="Support case updated",
+        body="Staff recorded an outcome on your support case. Open Interventions for assigned tasks.",
+    )
     return {"ok": True, "detail": "Outcome recorded."}
 
 
@@ -1098,15 +1142,21 @@ def success_settings_save(body: SettingsIn, session: dict = Depends(require_sess
     if session.get("user_role") != "administrator":
         raise HTTPException(status_code=403, detail="Administrators only.")
     payload = settings_payload({"institution_name": body.institution_name, "support_note": body.support_note})
-    existing = store.select("institution_settings", id=1) or store.select("institution_settings") or []
+    existing = store.select("institution_settings", id=1) or []
     if existing:
-        rid = existing[0].get("id") if existing[0].get("id") is not None else 1
-        updated = store.update("institution_settings", {"id": rid}, {"settings": payload})
-        if not updated:
+        updated = store.update("institution_settings", {"id": 1}, {"settings": payload})
+        if updated is None:
             raise HTTPException(status_code=500, detail="Could not save institution settings.")
     else:
-        _must_save(store.insert("institution_settings", {"id": 1, "settings": payload}), "Could not save institution settings.")
-    return {"ok": True, "detail": "Settings saved.", "settings": payload}
+        inserted = store.insert("institution_settings", {"id": 1, "settings": payload})
+        if not inserted:
+            updated = store.update("institution_settings", {"id": 1}, {"settings": payload})
+            if updated is None:
+                raise HTTPException(status_code=500, detail="Could not save institution settings.")
+    saved = _hub_settings()
+    if saved != payload:
+        raise HTTPException(status_code=500, detail="Could not persist institution settings.")
+    return {"ok": True, "detail": "Settings saved.", "settings": saved}
 
 
 @router.post("/api/success/import")
@@ -1195,6 +1245,13 @@ def success_task_done(body: TaskDoneIn, session: dict = Depends(require_session)
     updated = store.update("recovery_tasks", {"id": body.task_id}, {"done": bool(body.done)})
     if not updated:
         raise HTTPException(status_code=500, detail="Could not update the task.")
+    if session.get("user_role") == "student":
+        notify(
+            role="counsellor",
+            recipient_id="caseload",
+            title="Recovery task updated",
+            body=f"Student ID {task.get('student_id')} marked a recovery task {'done' if body.done else 'reopened'}.",
+        )
     return {"ok": True, "detail": "Task updated.", "done": bool(body.done)}
 
 
@@ -1271,8 +1328,14 @@ def mentorship_assign(body: MentorshipAssignIn, session: dict = Depends(require_
             raise HTTPException(status_code=403, detail="You can only request mentorship for your own account.")
     ref = (session.get("staff_data") or {}).get("staff_id") or (session.get("student_data") or {}).get("student_id")
     prefer = ref if actor in ("counsellor", "mentor", "faculty") else None
+    kind = _appointment_kind(body.kind) if body.kind else ""
+    if not kind:
+        if actor == "counsellor":
+            kind = "counsellor"
+        elif actor in ("mentor", "faculty"):
+            kind = "mentor"
     row, msg = mentorship.assign_mentorship(
-        body.student_id, actor, ref, goal=body.goal, session_state=session, prefer_staff_id=prefer
+        body.student_id, actor, ref, goal=body.goal, session_state=session, prefer_staff_id=prefer, kind=kind or None
     )
     if not row:
         raise HTTPException(status_code=400, detail=msg)
@@ -2826,6 +2889,12 @@ class PredictionSettingsIn(BaseModel):
     weights: dict | None = None
 
 
+class PerformancePredictIn(BaseModel):
+    student_id: int | str | None = None
+    features: dict | None = None
+    mode: str = "benchmark"
+
+
 def _prediction_error(msg: str):
     mapping = {
         "FEATURE_DISABLED": 403,
@@ -3497,3 +3566,68 @@ def predictions_settings_put(body: PredictionSettingsIn, session: dict = Depends
     if not row:
         _prediction_error(msg)
     return {"ok": True, "settings": clean(row)}
+
+
+_PERFORMANCE_ROLES = ("student", "teacher", "administrator", "counsellor", "faculty", "mentor")
+
+
+def _performance_unavailable(err=None):
+    raise HTTPException(status_code=503, detail="Prediction temporarily unavailable.")
+
+
+def _performance_student_id(session: dict, requested):
+    role = session.get("user_role")
+    if role not in _PERFORMANCE_ROLES:
+        raise HTTPException(status_code=403, detail="FORBIDDEN")
+    own = (session.get("student_data") or {}).get("student_id")
+    if role == "student":
+        if requested not in (None, "") and str(requested) != str(own):
+            raise HTTPException(status_code=403, detail="FORBIDDEN")
+        if own is None:
+            raise HTTPException(status_code=400, detail="No student is attached to this session.")
+        return own
+    if requested in (None, ""):
+        raise HTTPException(status_code=400, detail="student_id is required.")
+    return requested
+
+
+@router.get("/api/performance/model")
+def performance_model(mode: str | None = None, session: dict = Depends(require_session)):
+    if session.get("user_role") not in _PERFORMANCE_ROLES:
+        raise HTTPException(status_code=403, detail="FORBIDDEN")
+    try:
+        from src.performance_ml.inference import ModelUnavailable, model_details
+
+        return clean(model_details(mode))
+    except ModelUnavailable:
+        _performance_unavailable()
+    except Exception:
+        _performance_unavailable()
+
+
+@router.get("/api/performance/mapping")
+def performance_mapping(student_id: int | str | None = None, session: dict = Depends(require_session)):
+    sid = _performance_student_id(session, student_id)
+    try:
+        from src.performance_ml.mapping import map_student
+
+        row = map_student(sid, session=session)
+        row.pop("features", None)
+        return clean(row)
+    except Exception:
+        _performance_unavailable()
+
+
+@router.post("/api/performance/predict")
+def performance_predict(body: PerformancePredictIn | None = None, session: dict = Depends(require_session)):
+    payload = body.model_dump() if body else {}
+    sid = _performance_student_id(session, payload.get("student_id"))
+    try:
+        from src.performance_ml.inference import ModelUnavailable, predict_student
+
+        row = predict_student(sid, session=session, overrides=payload.get("features") or {}, mode=payload.get("mode") or "benchmark")
+        return clean(row)
+    except ModelUnavailable:
+        _performance_unavailable()
+    except Exception:
+        _performance_unavailable()

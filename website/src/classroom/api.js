@@ -18,7 +18,7 @@ async function request(path, { method = "GET", body, form, auth = true, timeoutM
   const timer = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
   let res;
   try {
-    res = await fetch(`${API_BASE}${path}`, { method, headers, body: payload, signal: controller?.signal });
+    res = await fetch(`${API_BASE}${path}`, { method, headers, body: payload, signal: controller?.signal, cache: "no-store" });
   } catch (err) {
     if (err?.name === "AbortError") {
       if (String(path).includes("voice") || String(path).includes("/register")) {
@@ -41,7 +41,7 @@ let workspacePromise = null;
 
 function loadWorkspace(force = false) {
   if (force || !workspacePromise) {
-    workspacePromise = request("/api/success/workspace").catch((err) => {
+    workspacePromise = request("/api/success/workspace", { timeoutMs: 120000 }).catch((err) => {
       workspacePromise = null;
       throw err;
     });
@@ -112,8 +112,12 @@ export const api = {
   staffInvites: () => request("/api/staff/invites"),
   successSearch: (q) => request(`/api/success/search?q=${encodeURIComponent(q || "")}`),
   successReport: () => request("/api/success/report"),
-  successSettings: () => request("/api/success/settings"),
-  saveSettings: (body) => request("/api/success/settings", { method: "POST", body }),
+  successSettings: () => request("/api/success/settings", { timeoutMs: 20000 }),
+  saveSettings: async (body) => {
+    const res = await request("/api/success/settings", { method: "POST", body });
+    workspacePromise = null;
+    return res;
+  },
   successImport: (file, kind = "academic") => {
     const form = new FormData();
     form.append("kind", kind);
@@ -272,6 +276,9 @@ export const api = {
   savePredictionPlan: (body) => request("/api/predictions/plans", { method: "POST", body }),
   predictionSettings: () => request("/api/predictions/settings"),
   savePredictionSettings: (body) => request("/api/predictions/settings", { method: "PUT", body }),
+  performanceModel: () => request("/api/performance/model"),
+  performanceMapping: (studentId) => request(`/api/performance/mapping${studentId != null && studentId !== "" ? `?student_id=${encodeURIComponent(studentId)}` : ""}`),
+  performancePredict: (body = {}) => request("/api/performance/predict", { method: "POST", body, timeoutMs: 15000 }),
   communityOverview: () => request("/api/communities/overview"),
   communities: (params = {}) => request(`/api/communities${academicQuery(params)}`),
   community: (id) => request(`/api/communities/${encodeURIComponent(id)}`),

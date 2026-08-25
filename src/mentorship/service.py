@@ -148,14 +148,48 @@ def tick_lifecycle(session_state=None):
             _audit("system", "tick", "feedback_unlocked", row["mentorship_id"])
 
 
+def _normalize_kind(value) -> str:
+    text = str(value or "").strip().lower()
+    if text in ("mentor", "mentoring", "mentorship"):
+        return "mentor"
+    if text in ("counsellor", "counselor", "counselling", "counseling"):
+        return "counsellor"
+    return ""
+
+
+def _session_kind(row) -> str:
+    if not row:
+        return ""
+    direct = _normalize_kind(row.get("kind") or row.get("service_kind"))
+    if direct:
+        return direct
+    goal = str(row.get("counseling_goal") or row.get("goal") or "").lower()
+    if "mentor" in goal:
+        return "mentor"
+    if "counsel" in goal:
+        return "counsellor"
+    staff = get_staff_public(row.get("mentor_staff_id")) or {}
+    role = str(staff.get("role") or "").lower()
+    if role == "counsellor":
+        return "counsellor"
+    if role in ("mentor", "faculty"):
+        return "mentor"
+    return ""
+
+
 def _open_for_student(student_id):
     try:
-        rows = supabase.table("mentorships").select("mentorship_id,status").eq("student_id", student_id).in_(
+        rows = supabase.table("mentorships").select("mentorship_id,status,kind,counseling_goal,mentor_staff_id").eq("student_id", student_id).in_(
             "status", list(OPEN_STATUSES)
         ).execute().data or []
         return rows
     except Exception:
-        return []
+        try:
+            return supabase.table("mentorships").select("mentorship_id,status,counseling_goal,mentor_staff_id").eq("student_id", student_id).in_(
+                "status", list(OPEN_STATUSES)
+            ).execute().data or []
+        except Exception:
+            return []
 
 
 def _rejected_pairs(student_id):
@@ -256,22 +290,30 @@ def assign_mentorship(student_id, actor_role, actor_ref, goal=None, risk_band=No
     from src.moderation.service import participation_allowed
     if not participation_allowed(student_id):
         return None, "This student cannot receive a new mentorship while their account is restricted, suspended, or banned."
+    track = _normalize_kind(kind)
     existing = _open_for_student(student_id)
-    if existing:
-        mid = existing[0].get("mentorship_id")
-        row = _fetch(mid)
+    same_kind = []
+    for item in existing:
+        row = _fetch(item.get("mentorship_id")) or item
+        session_kind = _session_kind(row)
+        if track and session_kind and session_kind != track:
+            continue
+        same_kind.append(row or item)
+    if same_kind:
+        mid = same_kind[0].get("mentorship_id")
+        row = _fetch(mid) or same_kind[0]
         if prefer_staff_id is not None and row:
             try:
                 if int(row.get("mentor_staff_id")) != int(prefer_staff_id):
-                    return None, "This student already has an open private session. End that session before starting another counselling or mentoring chat."
+                    service = "counselling" if track == "counsellor" else "mentoring" if track == "mentor" else "support"
+                    return None, f"This student already has an open {service} chat with another staff member."
             except (TypeError, ValueError):
                 pass
             view = faculty_view(mid, prefer_staff_id)
             if view:
                 return view, "Private chat already open. Continue in Anonymous Mentorship."
         return student_view(mid, student_id), "This student already has an open anonymous mentorship."
-    track = str(kind or "").strip().lower()
-    if track in ("mentor", "mentoring", "mentorship"):
+    if track in ("mentor",):
         track = "mentor"
         prefer_roles = ("mentor", "faculty")
         default_goal = "Private mentoring session."
@@ -307,6 +349,7 @@ def assign_mentorship(student_id, actor_role, actor_ref, goal=None, risk_band=No
         "student_alias": student_alias,
         "mentor_alias": mentor_alias,
         "status": "ANONYMOUS_ACTIVE",
+        "kind": track or None,
         "counseling_goal": goal or default_goal,
         "risk_band": risk_band or "Support",
         "attendance_context": _attendance_context(student_id),
@@ -314,6 +357,16 @@ def assign_mentorship(student_id, actor_role, actor_ref, goal=None, risk_band=No
         "feedback_due_at": due.isoformat(),
     })
     if not row:
+        last = ""
+        try:
+            last = str(store.last_error("mentorships") or "")
+        except Exception:
+            last = ""
+        if "mentorships_one_open_per_student" in last or "duplicate key" in last.lower() or "unique" in last.lower():
+            return None, (
+                "This student already has another open support chat. Counselling and mentoring "
+                "need separate open rows — apply the kind unique index in supabase/schema_mentorship.sql."
+            )
         return None, "Could not create mentorship."
     mid = row[0]["mentorship_id"]
     store.insert("anonymous_profiles", {"alias": student_alias, "mentorship_id": mid, "party": "student"})
@@ -350,6 +403,7 @@ def student_view(mentorship_id, student_id):
         "anonymousMentorId": row["mentor_alias"],
         "anonymousStudentId": row["student_alias"],
         "status": row["status"],
+        "kind": _session_kind(row) or None,
         "counselingGoal": row.get("counseling_goal"),
         "startedAt": row.get("started_at"),
         "feedbackDueAt": row.get("feedback_due_at"),
@@ -386,6 +440,7 @@ def faculty_view(mentorship_id, staff_id):
         "mentorshipId": row["mentorship_id"],
         "anonymousStudentId": row["student_alias"],
         "anonymousMentorId": row["mentor_alias"],
+        "kind": _session_kind(row) or None,
         "riskLevel": row.get("risk_band") or "Support",
         "counselingGoal": row.get("counseling_goal"),
         "attendanceContext": row.get("attendance_context"),

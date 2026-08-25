@@ -1,0 +1,126 @@
+{
+  "model_version": "perf-final-rf-v1",
+  "model_type": "RandomForestRegressor",
+  "dataset_name": "Student Performance & Behavior",
+  "dataset_source": "https://github.com/ramyfarouk81/Student-Performance-Behavior",
+  "dataset_label": "Public/reference student-performance benchmark dataset used for initial model development and validation.",
+  "dataset_rows": 5000,
+  "dataset_columns": 23,
+  "target": "Final_Score",
+  "features": [
+    "Age",
+    "Attendance (%)",
+    "Midterm_Score",
+    "Assignments_Avg",
+    "Quizzes_Avg",
+    "Participation_Score",
+    "Projects_Score",
+    "Study_Hours_per_Week",
+    "Stress_Level (1-10)",
+    "Sleep_Hours_per_Night",
+    "Gender",
+    "Department",
+    "Extracurricular_Activities",
+    "Internet_Access_at_Home",
+    "Parent_Education_Level",
+    "Family_Income_Level"
+  ],
+  "feature_count": 16,
+  "leakage_check": {
+    "excluded_from_features": [
+      "Total_Score",
+      "Grade",
+      "Final_Score"
+    ],
+    "pii_excluded": [
+      "Student_ID",
+      "First_Name",
+      "Last_Name",
+      "Email"
+    ],
+    "total_score_corr_with_final": 0.006596568272756367,
+    "mae_if_total_equals_final": 18.811688,
+    "mae_if_total_is_weighted_mid_final_assign": 14.5919688,
+    "grade_ranges_overlap_final": true,
+    "grade_by_final": {
+      "A": {
+        "final_min": 40.0,
+        "final_max": 99.98,
+        "total_min": 50.02,
+        "total_max": 99.99,
+        "count": 1495
+      },
+      "B": {
+        "final_min": 40.07,
+        "final_max": 99.88,
+        "total_min": 50.05,
+        "total_max": 99.99,
+        "count": 978
+      },
+      "C": {
+        "final_min": 40.13,
+        "final_max": 99.94,
+        "total_min": 50.08,
+        "total_max": 99.98,
+        "count": 794
+      },
+      "D": {
+        "final_min": 40.01,
+        "final_max": 99.98,
+        "total_min": 50.03,
+        "total_max": 99.94,
+        "count": 889
+      },
+      "F": {
+        "final_min": 40.02,
+        "final_max": 99.95,
+        "total_min": 50.06,
+        "total_max": 99.98,
+        "count": 844
+      }
+    },
+    "decision": "Do not use Total_Score or Grade as inputs. They are excluded by contract. On this benchmark they are also not a clean function of Final_Score, so using them would still be invalid for a pre-final estimate."
+  },
+  "random_seed": 42,
+  "train_rows": 4000,
+  "test_rows": 1000,
+  "mae": 14.9105,
+  "rmse": 17.1241,
+  "r2": -0.0055,
+  "important_factors": [
+    {
+      "feature": "Projects_Score",
+      "importance": 0.1171
+    },
+    {
+      "feature": "Quizzes_Avg",
+      "importance": 0.1115
+    },
+    {
+      "feature": "Midterm_Score",
+      "importance": 0.1112
+    },
+    {
+      "feature": "Participation_Score",
+      "importance": 0.1102
+    },
+    {
+      "feature": "Attendance (%)",
+      "importance": 0.1032
+    },
+    {
+      "feature": "Assignments_Avg",
+      "importance": 0.1018
+    },
+    {
+      "feature": "Study_Hours_per_Week",
+      "importance": 0.0926
+    },
+    {
+      "feature": "Sleep_Hours_per_Night",
+      "importance": 0.0773
+    }
+  ],
+  "trained_at": "2026-08-25T09:26:52Z",
+  "artifact": "src\\performance_ml\\artifacts\\final_score_model.joblib"
+}

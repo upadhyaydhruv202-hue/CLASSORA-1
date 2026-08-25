@@ -54,6 +54,7 @@ CLASSORA exists to replace paper registers and opaque “AI risk” dashboards w
 - **Anonymous mentorship** — assign, messages, sessions, feedback, reassign, suspend
 - **Moderation** — faculty/teacher complaints; administrator review, decide, student appeals
 - **Academic Resource Hub** — student directory of senior notes/PYQs/assignments with original source URLs; admin catalog management
+- **Final-score forecast (benchmark)** — Random Forest trained offline on the public Student Performance & Behavior dataset (5,000 rows). Shown as a compact card on Predictive Intelligence. Not institutional data.
 - **Local fallback store** — `data/local_db.json` when Supabase is not configured
 - **Production deploy** — Vercel (frontend) + Railway (API)
 
@@ -70,7 +71,7 @@ CLASSORA exists to replace paper registers and opaque “AI risk” dashboards w
 - Automatic interventions without a human reviewer
 - SHAP/LIME black-box explainers (the risk model is additive and already explained in-code)
 - Streamlit UI (removed; FastAPI + React only)
-- Demo / guest accounts (removed from the running app)
+- Guest / unauthenticated “demo mode” in the running app (removed). A labeled prototype dataset can be seeded with `scripts/seed_demo_data.py` — see [documentation/DEMO.md](documentation/DEMO.md)
 
 ---
 
@@ -214,7 +215,13 @@ If using Supabase, open **SQL Editor** and run in this order:
 3. `supabase/schema_success.sql` — staff, academics, LMS events, risk, cases, appointments
 4. `supabase/schema_mentorship.sql` — anonymous mentorship
 5. `supabase/schema_moderation.sql` — complaints, appeals, student status
-6. `supabase/schema_academic_resources.sql` — academic resource hub (sources, types, subjects, original URLs, broken-link reports)
+6. `supabase/schema_academic_resources.sql` — academic resource hub
+7. `supabase/schema_cohort_anomalies.sql` — institutional anomalies
+8. `supabase/schema_dropout_root_cause.sql` — dropout root-cause
+9. `supabase/schema_rewards.sql` — rewards, merchants, vouchers
+10. `supabase/schema_secure_attendance.sql` — secure multi-layer attendance
+11. `supabase/schema_predictions.sql` — predictive intelligence
+12. `supabase/schema_communities.sql` — student communities
 
 There is no ORM migration runner. There is no seed script for production. Register users through `/app`.
 
@@ -226,6 +233,14 @@ No extra model files to download. Pip installs:
 - Resemblyzer weights on first voice request (Torch)
 
 The API preloads dlib (and the face SVM when students exist) at process start.
+
+**Final-score forecast (additive).** Isolated module `src/performance_ml/`. Dataset: public/reference [Student Performance & Behavior](https://github.com/ramyfarouk81/Student-Performance-Behavior) CSV (`src/performance_ml/data/`). Target: `Final_Score`. `Total_Score` and `Grade` are excluded (leakage contract). Train offline:
+
+```powershell
+py -3.11 -m src.performance_ml.train
+```
+
+Artifact: `src/performance_ml/artifacts/final_score_model.joblib` plus `metadata.json` (MAE / RMSE / R² from that run). A separate **synthetic demo calibration** model (`final_score_calibration.joblib`) is labeled as synthetic so optional midterm/quiz/project/study/stress/sleep boxes can move the estimate; it is not the GitHub CSV and not institutional data. API infers only — it does not retrain. CLASSORA attendance / academic fields map when present; remaining fields are imputed from training statistics, not fabricated as live values.
 
 ### 7. Start the API
 
@@ -257,7 +272,21 @@ py -3.11 -m unittest discover -s tests -v
 
 Covers moderation policy, risk widget mapping, and Digital Twin / explanation payloads. Not a substitute for a full browser E2E pass.
 
-### 10. Production build (frontend)
+### 10. Prototype demo dataset
+
+CLASSORA can be filled with **synthetic demonstration records** so existing hub screens are not empty. These are not institutional student records.
+
+```powershell
+py -3.11 scripts/seed_demo_data.py
+```
+
+The script is idempotent: names end with `(Demo)`, subject codes start with `DEMO-`, and re-running skips rows that already exist. It writes through the existing database / `store.insert` path. Attendance percentages, academic averages, risk, and reward wallets stay calculated by current CLASSORA logic. Face embeddings, voice embeddings, and the performance-ML training pipeline are not modified.
+
+Look for roster names such as `Aarav Mehta (Demo)` and `Kabir Patel (Demo)` in the Success Hub picker.
+
+Demo staff/teacher logins and the reset command are listed in [documentation/DEMO.md](documentation/DEMO.md). Shared demo password: `DemoPass123`. Student FaceID login still requires a real enrollment; demo students are not given fake embeddings.
+
+### 11. Production build (frontend)
 
 ```powershell
 cd website
@@ -284,6 +313,7 @@ Set `VITE_API_URL` at **build time** to the public API origin (see `website/.env
 | [documentation/PROJECT.md](documentation/PROJECT.md) | Overview, architecture, workflows, roles, ML, configuration, future work |
 | [documentation/API.md](documentation/API.md) | HTTP routes as implemented |
 | [documentation/DATABASE.md](documentation/DATABASE.md) | Tables and how they are used |
+| [documentation/DEMO.md](documentation/DEMO.md) | Prototype demo accounts, seed/reset, limitations |
 
 ---
 

@@ -12,7 +12,7 @@ from src.database.config import is_supabase_configured, supabase
 
 _LOCK = threading.Lock()
 _PATH = Path(__file__).resolve().parents[2] / "data" / "success_store.json"
-_CLOUD_ONLY = {"mentorships", "complaints", "student_moderation_status", "mentorship_messages", "appeals"}
+_CLOUD_ONLY = {"mentorships", "complaints", "student_moderation_status", "mentorship_messages", "student_appeals"}
 _ACADEMIC = {
     "academic_resource_sources",
     "academic_resource_types",
@@ -174,7 +174,7 @@ def insert(table: str, row: dict):
                     if key in message or f"'{key}'" in message:
                         cleaned.pop(key, None)
                 # Common additive columns that may be absent on older SQL.
-                for optional in ("discovery_status", "organization", "section", "logo_url", "thumbnail_url"):
+                for optional in ("discovery_status", "organization", "section", "logo_url", "thumbnail_url", "kind"):
                     if optional in message:
                         cleaned.pop(optional, None)
                 if cleaned != payload:

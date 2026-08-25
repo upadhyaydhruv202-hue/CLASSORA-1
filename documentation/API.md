@@ -62,8 +62,6 @@ Auth responses typically return `{ token, session }`.
 | --- | --- | --- | --- |
 | POST | `/api/auth/student/register` | No | `multipart`: `name`, `face`, optional `voice`. Face embedding stored immediately; voice processed in a background task |
 | POST | `/api/auth/student/face` | No | `multipart`: `face`. Requires exactly one face. `{ matched, token?, session?, detail? }` |
-| POST | `/api/auth/student/quick` | No | Query `student_id`. Directory shortcut login |
-| GET | `/api/student/directory` | No | `{ student_id, name }[]` public names only |
 
 ---
 
@@ -304,6 +302,16 @@ Statistical and retrieval-style analysis of uploaded academic/career text. There
 | GET | `/api/predictions/evidence/{id}` | Viewers | Citations the caller is allowed to see |
 | POST | `/api/predictions/plans` | Student | Save an edited study plan |
 | GET/PUT | `/api/predictions/settings` | Administrator | Weights and minimum sample sizes |
+
+### Final-score forecast (public benchmark)
+
+Isolated from the PYQ Predictive Intelligence engine. Uses the trained `src/performance_ml` artifact. Not institutional data.
+
+| Method | Path | Auth | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/performance/model` | Student / staff | Dataset name, row count, target, features, MAE/RMSE/R², training timestamp |
+| GET | `/api/performance/mapping` | Student (own) / staff (`student_id` required) | Which CLASSORA fields mapped; missing stay unavailable |
+| POST | `/api/performance/predict` | Student (own) / staff (`student_id` required) | Body `{ student_id?, features?, mode? }`. `mode` is `benchmark` (public CSV) or `calibration` (synthetic demo). Returns predicted Final_Score, band, important factors, `synthetic` flag. Failures return 503 `Prediction temporarily unavailable.` |
 
 Merchant sessions cannot call these routes.
 

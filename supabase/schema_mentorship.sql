@@ -165,3 +165,11 @@ create policy "anon_all_mentorship_notifications" on public.mentorship_notificat
 create policy "anon_all_mentorship_audit_logs" on public.mentorship_audit_logs for all to anon, authenticated using (true) with check (true);
 
 notify pgrst, 'reload schema';
+
+-- Additive: one open counselling chat AND one open mentoring chat per student.
+alter table public.mentorships add column if not exists kind text;
+update public.mentorships set kind = 'counsellor' where kind is null or kind = '';
+drop index if exists mentorships_one_open_per_student;
+create unique index if not exists mentorships_one_open_per_student_kind
+  on public.mentorships (student_id, kind)
+  where status in ('ASSIGNED', 'ANONYMOUS_ACTIVE', 'FEEDBACK_PENDING', 'REASSIGNMENT_PENDING');

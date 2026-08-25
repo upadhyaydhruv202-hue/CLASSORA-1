@@ -28,7 +28,7 @@ Run order:
 | `data/local_db.json` | No Supabase: teachers, students, subjects, enrollment, attendance, staff, invites, auth events |
 | `data/success_store.json` | Success-layer rows that are allowed offline, including academic-resource, institutional-anomaly, dropout-analysis, rewards, secure-attendance, prediction, and community tables when those Supabase tables are missing |
 
-`data/` is gitignored. Mentorship and complaint tables are **cloud-only** (`src/success/store.py` `_CLOUD_ONLY`). Assigning mentorship or filing complaints without Supabase will not persist those records.
+`data/` is gitignored. Mentorship and complaint/appeal tables are **cloud-only** (`src/success/store.py` `_CLOUD_ONLY`: `mentorships`, `mentorship_messages`, `complaints`, `student_moderation_status`, `student_appeals`). Assigning mentorship or filing complaints/appeals without those Supabase tables will not persist those records.
 
 ---
 
@@ -232,6 +232,32 @@ Additive interest communities. Does not alter `students.name` visibility elsewhe
 | `community_blocks` | Student-to-student hide |
 
 There is no enrollment-number column in CLASSORA. The default public identifier is numeric `student_id`.
+
+---
+
+## Demo dataset
+
+Purpose: prototype demonstration and feature validation so existing screens have coherent rows to aggregate.
+
+Type: synthetic / seed data. **Not** institutional student records and **not** empirical college statistics.
+
+Command: `py -3.11 scripts/seed_demo_data.py` (`src/success/demo_seed.py`). Safe to re-run. Uses positive `students.student_id` values created by the existing students table (negative IDs from `src/success/demo_data.py` are never written to production).
+
+Coverage (existing tables only):
+
+- `students` — display names labeled `(Demo)`, no face/voice embeddings
+- `subjects` / `subject_students` / `attendance_logs` — `DEMO-*` subject codes
+- `academic_records` — assessments prefixed `Demo ·`
+- `lms_events` — `course_code = DEMO-HUB`
+- `alerts`, `intervention_cases`, `intervention_recommendations`, `recovery_plans`, `recovery_tasks`, `appointments`, `notifications`, `student_context`
+- `mentorships` / sessions / messages when the mentorship schema and a staff mentor exist (`kind` separates mentoring vs counselling)
+- `communities` slugs `demo-coding-club`, `demo-sports-circle`, `demo-cultural-circle`, `demo-academic-study`, `demo-campus-activities`, `demo-festive-committee` plus members/posts
+- `reward_achievements`, `reward_transactions`, badges/milestones via existing reward helpers; `campus_merchants` Demo Campus Canteen
+- `student_academic_outcomes` with `recorded_by=demo_seed`
+- `complaints` / `student_appeals` / `student_moderation_status` for the Tara prototype path
+- `staff_users` usernames `DEMO_*` and teacher `DEMO_FACULTY_01`
+
+Not seeded: face/voice embeddings, live recognition results, performance-ML training rows, or fabricated dropout-rate rankings.
 
 ---
 

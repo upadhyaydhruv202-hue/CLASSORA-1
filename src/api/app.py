@@ -368,7 +368,7 @@ def teacher_institution(session: dict = Depends(require_role("teacher"))):
     from src.database.institution import apply_filters, build_metrics, load_teacher_institution
 
     teacher_id = session["teacher_data"]["teacher_id"]
-    bundle = load_teacher_institution(teacher_id)
+    bundle = load_teacher_institution(teacher_id, session_state=session)
     filtered = apply_filters(bundle)
     return {"bundle": bundle, "metrics": build_metrics(filtered)}
 

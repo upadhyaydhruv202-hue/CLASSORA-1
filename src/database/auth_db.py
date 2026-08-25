@@ -2,7 +2,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from src.database.config import supabase, is_supabase_configured
-from src.database.db import check_pass, hash_pass, check_teacher_exists, create_teacher
+from src.database.db import check_pass, hash_pass, check_teacher_exists, create_teacher, _supabase_once
 
 
 def _configured() -> bool:
@@ -70,9 +70,9 @@ def update_teacher_password(teacher_id, new_password):
         return False
 
 
-def change_teacher_password(teacher_id, current_password, new_password, confirm_password):
+def change_teacher_password(teacher_id, current_password, new_password, confirm_password, session_state=None):
     from src.auth.guards import require_same_teacher
-    if not require_same_teacher(teacher_id):
+    if not require_same_teacher(teacher_id, session_state):
         return False, "You are not allowed to change this password."
     ok, msg = password_strength(new_password)
     if not ok:
@@ -126,45 +126,49 @@ def reset_teacher_password(username, registered_name, new_password, confirm_pass
     return True, "Password reset. You can log in with the new password."
 
 
-def create_teacher_invite(invited_name, invited_username, invited_by):
+def create_teacher_invite(invited_name, invited_username, invited_by, session_state=None):
     from src.auth.guards import require_same_teacher
-    if not require_same_teacher(invited_by):
+    if not require_same_teacher(invited_by, session_state):
         return None, "You are not allowed to create invitations."
     if not invited_name or not invited_username:
         return None, "Name and username are required."
     if check_teacher_exists(invited_username):
         return None, "That username is already registered."
     try:
-        existing = (
+        existing = _supabase_once(lambda: (
             supabase.table("teacher_invites")
             .select("invite_id, used_at")
             .eq("invited_username", invited_username)
             .is_("used_at", "null")
             .execute()
-        )
+        ))
         if existing.data:
             return None, "An unused invitation already exists for this username."
-    except Exception:
-        return None, "Invitation storage is not available. Run supabase/schema_auth.sql."
+    except Exception as exc:
+        err = str(exc)
+        return None, f"Invitation storage is not available. {err.splitlines()[0][:160]}"
 
     token = secrets.token_urlsafe(16)
     try:
-        supabase.table("teacher_invites").insert({
+        _supabase_once(lambda: supabase.table("teacher_invites").insert({
             "invited_name": invited_name.strip(),
             "invited_username": invited_username.strip(),
             "token_hash": hash_pass(token),
             "invited_by": invited_by,
             "expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
-        }).execute()
-    except Exception:
-        return None, "Invitation storage is not available. Run supabase/schema_auth.sql."
+        }).execute())
+    except Exception as exc:
+        err = str(exc)
+        if "duplicate" in err.lower() or "unique" in err.lower():
+            return None, "An unused invitation already exists for this username."
+        return None, f"Invitation storage is not available. {err.splitlines()[0][:160]}"
     log_auth_event(invited_username, "teacher", "invite_created", "ok")
-    return token, "Invitation created. Share the activation code with the teacher."
+    return token, "Invitation created. Share the activation code with the faculty member."
 
 
-def list_teacher_invites(invited_by):
+def list_teacher_invites(invited_by, session_state=None):
     from src.auth.guards import require_same_teacher
-    if not require_same_teacher(invited_by):
+    if not require_same_teacher(invited_by, session_state):
         return []
     try:
         res = (

@@ -9,7 +9,7 @@ function formatWhen(value) {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return date.toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
 export default function SecureAttendance({ session }) {
@@ -35,7 +35,8 @@ function FacultySecure({ role }) {
 
   const load = async (sessionId) => {
     try {
-      const [subs, list] = await Promise.all([api.teacherSubjects().catch(() => []), api.attendanceSessions()]);
+      const subjectPromise = role === "teacher" ? api.teacherSubjects() : api.teacherSubjects().catch(() => []);
+      const [subs, list] = await Promise.all([subjectPromise, api.attendanceSessions()]);
       setSubjects(subs || []);
       if (!subjectId && subs?.[0]) setSubjectId(String(subs[0].subject_id));
       setSessions(list.sessions || []);

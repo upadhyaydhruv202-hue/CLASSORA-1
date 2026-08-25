@@ -15,8 +15,8 @@ def current_session() -> dict:
     return _session.get() or {}
 
 
-def session_teacher_id():
-    data = current_session()
+def session_teacher_id(session_state=None):
+    data = session_state if session_state is not None else current_session()
     if not has_role(data, "teacher"):
         return None
     teacher = data.get("teacher_data") or {}
@@ -27,8 +27,8 @@ def require_teacher() -> bool:
     return session_teacher_id() is not None
 
 
-def require_same_teacher(teacher_id) -> bool:
-    current = session_teacher_id()
+def require_same_teacher(teacher_id, session_state=None) -> bool:
+    current = session_teacher_id(session_state)
     if current is None or teacher_id is None:
         return False
     try:

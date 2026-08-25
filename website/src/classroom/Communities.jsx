@@ -165,7 +165,7 @@ export default function Communities({ session }) {
           </div>
           <div className="flex flex-wrap gap-2">
             {(overview?.categories || []).map((item) => (
-              <button key={item.code} type="button" className={`co-btn ${category === item.code ? "" : "co-btn-tertiary"}`} onClick={() => { setCategory(item.code); setSearch(""); }}>
+              <button key={item.code} type="button" className={`co-btn ${category === item.code ? "" : "co-btn-tertiary"}`} onClick={() => { const next = category === item.code ? "" : item.code; setCategory(next); setSearch(""); run(() => api.communities({ q: "", category: next }).then((data) => { setResults(data?.communities || []); setTab("discover"); })); }}>
                 {item.name}
               </button>
             ))}
@@ -198,7 +198,7 @@ export default function Communities({ session }) {
             </div>
           )}
           <div className="co-comm-grid">
-            {(tab === "mine" ? overview?.mine : results).map((item) => (
+            {(tab === "mine" ? (overview?.mine || []) : results).map((item) => (
               <CommunityCard key={item.id} item={item} busy={busy} onOpen={openCommunity} onJoin={(id) => run(() => api.joinCommunity(id).then(loadOverview), "Joined.")} />
             ))}
           </div>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import PerformanceForecast from "./PerformanceForecast";
 import { api } from "./api";
 import { EmptyState, Field, Notice } from "./ui";
 
@@ -103,7 +104,7 @@ export function PredictionHealthSummary({ summary, onOpen }) {
   );
 }
 
-export default function PredictiveIntelligence({ session }) {
+export default function PredictiveIntelligence({ session, profile }) {
   const role = session?.user_role;
   const isStudent = role === "student";
   const isAdmin = role === "administrator";
@@ -205,6 +206,7 @@ export default function PredictiveIntelligence({ session }) {
       {error && <Notice title="Predictive Intelligence" body={error} tone="danger" />}
       {notice && <Notice title="Updated" body={notice} tone="ok" />}
       {statusHint && <Notice title="Working" body={statusHint} tone="info" />}
+      <PerformanceForecast session={session} profile={profile} />
       <div className="co-modules" role="tablist" aria-label="Predictive Intelligence sections">
         {TABS.map(([id, label]) => (
           <button key={id} type="button" className={`co-btn ${tab === id ? "" : "co-btn-secondary"}`} onClick={() => setTab(id)}>

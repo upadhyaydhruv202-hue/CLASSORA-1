@@ -7,7 +7,6 @@ import AcademicResources from "./AcademicResources";
 import SuccessWorkspace, { AccountPanel, InstitutionPanel } from "./Features";
 import ClassoraRewards from "./ClassoraRewards";
 import SecureAttendance from "./SecureAttendance";
-import Communities from "./Communities";
 import {
   DashFooter,
   DashHeader,
@@ -188,7 +187,9 @@ export default function ClassroomApp() {
   const [busy, setBusy] = useState(false);
 
   const boot = async () => {
-    api.health().then(setHealth).catch(() => {});
+    api.health().then(setHealth).catch(() => {
+      setHealth({ ok: false, mode: "unreachable", face_models_ready: false, voice_models_ready: false, models: {} });
+    });
     if (!hasSession()) return;
     try {
       setSession(await api.me());
@@ -620,7 +621,7 @@ function TeacherDesk({ session, health, setError, onLogout }) {
           <button type="button" className="co-btn co-btn-secondary mt-3" onClick={onLogout}>Logout</button>
         </div>
       </div>
-      <StretchNav items={teacherNav} value={tab} onChange={setTab} />
+      <StretchNav items={teacherNav} value={tab} onChange={(next) => { setError(""); setTab(next); }} />
       <hr className="co-hr" />
       {tab === "subjects" && (
         <div>
@@ -863,6 +864,7 @@ function StudentDesk({ session, setError, onLogout }) {
         items={studentNav}
         value={tab}
         onChange={(next) => {
+          setError("");
           setTab(next);
           const url = new URL(window.location.href);
           if (next === "subjects") url.searchParams.delete("tab");
@@ -910,8 +912,12 @@ function StudentDesk({ session, setError, onLogout }) {
                     type="button"
                     className="co-btn co-btn-tertiary mt-3"
                     onClick={async () => {
-                      await api.unenroll(sub.subject_id);
-                      reload();
+                      try {
+                        await api.unenroll(sub.subject_id);
+                        reload();
+                      } catch (err) {
+                        setError(err.message);
+                      }
                     }}
                   >
                     Unenroll
@@ -925,12 +931,11 @@ function StudentDesk({ session, setError, onLogout }) {
       )}
       {tab === "resources" && <AcademicResources key={resourceNonce} session={session} />}
       {tab === "verify" && <SecureAttendance session={session} />}
-      {tab === "communities" && <Communities session={session} />}
-      {tab !== "subjects" && tab !== "resources" && tab !== "verify" && tab !== "communities" && (
+      {tab !== "subjects" && tab !== "resources" && tab !== "verify" && (
         <SuccessWorkspace
           session={session}
           setError={setError}
-          defaultModule={tab === "mentorship" ? "Anonymous Mentorship" : tab === "account" ? "Account" : tab === "rewards" ? "My Rewards" : tab === "verify" ? "Verify Attendance" : tab === "predict" ? "Predictive Intelligence" : tab === "communities" ? "Communities" : "My Digital Twin"}
+          defaultModule={tab === "mentorship" ? "Anonymous Mentorship" : tab === "account" ? "Account" : tab === "rewards" ? "My Rewards" : tab === "predict" ? "Predictive Intelligence" : tab === "communities" ? "Communities" : "My Digital Twin"}
           cached={workspace || shell}
           onCached={setWorkspace}
         />

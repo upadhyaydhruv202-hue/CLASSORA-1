@@ -441,7 +441,7 @@ export default function DropoutRootCause({ session, variant = "page" }) {
       )}
 
       {!loading && overview && !overview.hasAnalysis && (
-        <EmptyState title="No analysis has been run yet." body="Authorized administrators or teachers can run analysis after explicit dropout outcomes exist." />
+        <EmptyState title="No analysis has been run yet." body="Authorized administrators or faculty can run analysis after explicit dropout outcomes exist." />
       )}
 
       {!loading && overview?.hasAnalysis && overview.insufficient && (

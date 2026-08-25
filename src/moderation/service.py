@@ -896,13 +896,10 @@ def submit_appeal(*, student_id, reason, explanation, evidence_note=None, compla
     text = (reason or "").strip()
     if len(text) < 10:
         return None, "Explain why you are appealing."
-    open_appeals = []
-    try:
-        open_appeals = supabase.table("student_appeals").select("id").eq("student_id", int(student_id)).eq(
-            "status", "SUBMITTED"
-        ).execute().data or []
-    except Exception:
-        open_appeals = []
+    open_appeals = [
+        row for row in (store.select("student_appeals", student_id=int(student_id)) or [])
+        if str(row.get("status") or "").upper() == "SUBMITTED"
+    ]
     if open_appeals:
         return None, "You already have an appeal under review."
     row = store.insert("student_appeals", {
@@ -930,21 +927,30 @@ def submit_appeal(*, student_id, reason, explanation, evidence_note=None, compla
 def list_appeals():
     if not installed():
         return []
-    try:
-        return supabase.table("student_appeals").select("*").order("created_at", desc=True).limit(200).execute().data or []
-    except Exception:
-        return []
+    rows = list(store.select("student_appeals") or [])
+    rows.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+    return rows[:200]
 
 
 def student_appeals(student_id):
     if not installed():
         return []
     try:
-        return supabase.table("student_appeals").select(
-            "id,reason,status,admin_note,created_at,reviewed_at"
-        ).eq("student_id", int(student_id)).order("created_at", desc=True).execute().data or []
-    except Exception:
+        sid = int(student_id)
+    except (TypeError, ValueError):
         return []
+    rows = []
+    for row in store.select("student_appeals", student_id=sid) or []:
+        rows.append({
+            "id": row.get("id"),
+            "reason": row.get("reason"),
+            "status": row.get("status"),
+            "admin_note": row.get("admin_note"),
+            "created_at": row.get("created_at"),
+            "reviewed_at": row.get("reviewed_at"),
+        })
+    rows.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+    return rows
 
 
 def review_appeal(*, appeal_id, admin_staff_id, admin_role, decision: str, admin_note: str,

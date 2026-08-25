@@ -1,0 +1,86 @@
+{
+  "model_type": "RandomForestRegressor",
+  "target": "Final_Score",
+  "features": [
+    "Age",
+    "Attendance (%)",
+    "Midterm_Score",
+    "Assignments_Avg",
+    "Quizzes_Avg",
+    "Participation_Score",
+    "Projects_Score",
+    "Study_Hours_per_Week",
+    "Stress_Level (1-10)",
+    "Sleep_Hours_per_Night",
+    "Gender",
+    "Department",
+    "Extracurricular_Activities",
+    "Internet_Access_at_Home",
+    "Parent_Education_Level",
+    "Family_Income_Level"
+  ],
+  "feature_count": 16,
+  "random_seed": 42,
+  "train_rows": 3200,
+  "test_rows": 800,
+  "mae": 3.3536,
+  "rmse": 4.1686,
+  "r2": 0.6664,
+  "important_factors": [
+    {
+      "feature": "Midterm_Score",
+      "importance": 0.321
+    },
+    {
+      "feature": "Attendance (%)",
+      "importance": 0.13
+    },
+    {
+      "feature": "Study_Hours_per_Week",
+      "importance": 0.1171
+    },
+    {
+      "feature": "Projects_Score",
+      "importance": 0.0808
+    },
+    {
+      "feature": "Quizzes_Avg",
+      "importance": 0.0792
+    },
+    {
+      "feature": "Assignments_Avg",
+      "importance": 0.0761
+    },
+    {
+      "feature": "Stress_Level (1-10)",
+      "importance": 0.0743
+    },
+    {
+      "feature": "Participation_Score",
+      "importance": 0.0621
+    }
+  ],
+  "trained_at": "2026-08-25T09:26:53Z",
+  "artifact": "src/performance_ml/artifacts/final_score_calibration.joblib",
+  "model_version": "perf-final-rf-cal-v1",
+  "dataset_name": "Synthetic demo calibration set",
+  "dataset_source": "generated in src/performance_ml/train.py:make_calibration_frame",
+  "dataset_label": "SYNTHETIC calibration data for demo only. Not the public GitHub benchmark. Not institutional or college-collected student records. Generated so attendance, assessments, study hours, stress, and sleep can move the estimate.",
+  "dataset_rows": 4000,
+  "dataset_columns": 17,
+  "synthetic": true,
+  "leakage_check": {
+    "excluded_from_features": [
+      "Total_Score",
+      "Grade",
+      "Final_Score"
+    ],
+    "pii_excluded": [
+      "Student_ID",
+      "First_Name",
+      "Last_Name",
+      "Email"
+    ],
+    "decision": "Synthetic rows do not include Total_Score, Grade, names, or emails."
+  }
+}

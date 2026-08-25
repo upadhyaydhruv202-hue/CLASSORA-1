@@ -35,8 +35,8 @@ def attendance_band(rate: float, regular_min=REGULAR_MIN, watch_min=WATCH_MIN) -
     return "Critical"
 
 
-def load_teacher_institution(teacher_id):
-    if not require_same_teacher(teacher_id):
+def load_teacher_institution(teacher_id, session_state=None):
+    if not require_same_teacher(teacher_id, session_state):
         return {"subjects": [], "records": [], "enrollments": []}
 
     if not is_supabase_configured():

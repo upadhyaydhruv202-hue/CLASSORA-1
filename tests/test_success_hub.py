@@ -66,6 +66,100 @@ class ReportSearchImportTests(unittest.TestCase):
         self.assertEqual(out["support_note"], "hello")
 
 
+class InstitutionSettingsPersistenceTests(unittest.TestCase):
+    def test_hub_settings_prefers_id_1(self):
+        from src.api.features import _hub_settings
+        rows = [
+            {"id": 2, "settings": {"institution_name": "Wrong"}},
+            {"id": 1, "settings": {"institution_name": "NIT", "support_note": "hi"}},
+        ]
+        with patch("src.api.features.store.select", return_value=rows):
+            self.assertEqual(_hub_settings()["institution_name"], "NIT")
+            self.assertEqual(_hub_settings()["support_note"], "hi")
+
+    def test_hub_settings_reads_flat_columns(self):
+        from src.api.features import _hub_settings
+        with patch("src.api.features.store.select", return_value=[{
+            "id": 1,
+            "institution_name": "Flat College",
+            "support_note": "note",
+        }]):
+            self.assertEqual(_hub_settings()["institution_name"], "Flat College")
+
+    def test_save_then_get_roundtrip(self):
+        from src.api.features import SettingsIn, success_settings_get, success_settings_save
+        from src.auth.session import session_payload
+
+        db = {"rows": []}
+
+        def select(table, **eq):
+            rows = list(db["rows"])
+            if "id" in eq:
+                return [row for row in rows if row.get("id") == eq["id"]]
+            return rows
+
+        def update(table, match, values):
+            changed = []
+            for row in db["rows"]:
+                if row.get("id") == match.get("id"):
+                    row.update(values)
+                    changed.append(dict(row))
+            return changed
+
+        def insert(table, row):
+            db["rows"].append(dict(row))
+            return [dict(row)]
+
+        session = session_payload(
+            role="administrator",
+            staff={"staff_id": 1, "username": "admin", "name": "Admin", "role": "administrator"},
+        )
+        with patch("src.api.features.store.select", side_effect=select), \
+             patch("src.api.features.store.update", side_effect=update), \
+             patch("src.api.features.store.insert", side_effect=insert):
+            saved = success_settings_save(
+                SettingsIn(institution_name="Persist Me", support_note="keep"),
+                session=session,
+            )
+            self.assertEqual(saved["settings"]["institution_name"], "Persist Me")
+            self.assertEqual(db["rows"][0]["settings"]["institution_name"], "Persist Me")
+            got = success_settings_get(session=session)
+            self.assertEqual(got["settings"]["institution_name"], "Persist Me")
+            self.assertEqual(got["settings"]["support_note"], "keep")
+
+    def test_save_persists_when_update_returns_no_representation(self):
+        from src.api.features import SettingsIn, success_settings_get, success_settings_save
+        from src.auth.session import session_payload
+
+        db = {"rows": [{"id": 1, "settings": {}}]}
+
+        def select(table, **eq):
+            rows = list(db["rows"])
+            if "id" in eq:
+                return [row for row in rows if row.get("id") == eq["id"]]
+            return rows
+
+        def update(table, match, values):
+            for row in db["rows"]:
+                if row.get("id") == match.get("id"):
+                    row.update(values)
+            return []
+
+        session = session_payload(
+            role="administrator",
+            staff={"staff_id": 1, "username": "admin", "name": "Admin", "role": "administrator"},
+        )
+        with patch("src.api.features.store.select", side_effect=select), \
+             patch("src.api.features.store.update", side_effect=update):
+            saved = success_settings_save(
+                SettingsIn(institution_name="After Minimal Return", support_note=""),
+                session=session,
+            )
+            self.assertEqual(saved["settings"]["institution_name"], "After Minimal Return")
+            got = success_settings_get(session=session)
+            self.assertEqual(got["settings"]["institution_name"], "After Minimal Return")
+
+
 class StaffActivateTests(unittest.TestCase):
     def test_rejects_invalid_token(self):
         with patch("src.success.staff_auth.store.select", return_value=[]):

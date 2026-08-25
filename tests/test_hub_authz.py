@@ -274,6 +274,9 @@ class MentoringCounsellingSeparationTests(unittest.TestCase):
             self.assertIn(name, admin)
         self.assertIn("Appointments", counsellor)
         self.assertIn("Anonymous Mentorship", counsellor)
+        self.assertIn("Appointments", _modules("mentor"))
+        self.assertIn("Appointments", _modules("faculty"))
+        self.assertNotIn("Institution success", _modules("mentor"))
 
     def test_student_mentoring_request_notifies_mentors(self):
         from src.api.features import AppointmentIn
@@ -289,6 +292,14 @@ class MentoringCounsellingSeparationTests(unittest.TestCase):
         self.assertIn("mentor", roles)
         self.assertNotIn("counsellor", roles)
         self.assertIn("student", roles)
+
+    def test_appointment_requires_explicit_kind(self):
+        from src.api.features import AppointmentIn
+        _, session = _bearer("student", student_id=18)
+        with self.assertRaises(HTTPException) as ctx:
+            success_appointment(AppointmentIn(), session=session)
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("counselling or mentoring", str(ctx.exception.detail).lower())
 
     def test_student_counselling_request_notifies_counsellors(self):
         from src.api.features import AppointmentIn
@@ -341,6 +352,60 @@ class AttendanceTimestampTests(unittest.TestCase):
         self.assertIsNotNone(parsed.tzinfo)
         self.assertEqual(parsed.tzinfo, timezone.utc)
         self.assertNotIn("10:00 AM", stamp)
+
+
+class TeacherInviteGuardTests(unittest.TestCase):
+    def test_require_same_teacher_uses_passed_session(self):
+        from src.auth.guards import require_same_teacher
+        _, session = _bearer("teacher", teacher_id=42)
+        self.assertTrue(require_same_teacher(42, session))
+        self.assertFalse(require_same_teacher(99, session))
+        self.assertFalse(require_same_teacher(42))
+
+
+class AppealStoreAndAssignKindTests(unittest.TestCase):
+    def test_cloud_only_uses_student_appeals_table(self):
+        from src.success.store import _CLOUD_ONLY
+        self.assertIn("student_appeals", _CLOUD_ONLY)
+        self.assertNotIn("appeals", _CLOUD_ONLY)
+
+    def test_counsellor_assign_passes_counsellor_kind(self):
+        from src.api.features import MentorshipAssignIn, mentorship_assign
+        _, session = _bearer("counsellor", staff_id=4)
+        captured = {}
+
+        def fake_assign(*args, **kwargs):
+            captured.update(kwargs)
+            return {"mentorshipId": "m1"}, "Anonymous counselling started."
+
+        with patch("src.api.features.mentorship.assign_mentorship", side_effect=fake_assign):
+            res = mentorship_assign(MentorshipAssignIn(student_id=18), session=session)
+        self.assertEqual(captured.get("kind"), "counsellor")
+        self.assertTrue(res["ok"])
+
+    def test_mentor_assign_passes_mentor_kind(self):
+        from src.api.features import MentorshipAssignIn, mentorship_assign
+        _, session = _bearer("mentor", staff_id=5)
+        captured = {}
+
+        def fake_assign(*args, **kwargs):
+            captured.update(kwargs)
+            return {"mentorshipId": "m2"}, "Anonymous mentoring started."
+
+        with patch("src.api.features.mentorship.assign_mentorship", side_effect=fake_assign):
+            mentorship_assign(MentorshipAssignIn(student_id=18), session=session)
+        self.assertEqual(captured.get("kind"), "mentor")
+
+
+class MentorshipKindIsolationTests(unittest.TestCase):
+    def test_session_kind_from_goal_does_not_cross(self):
+        from src.mentorship.service import _session_kind
+        self.assertEqual(_session_kind({"counseling_goal": "Private mentoring chat after student request."}), "mentor")
+        self.assertEqual(_session_kind({"counseling_goal": "Private counselling chat after student request."}), "counsellor")
+
+    def test_mentor_modules_include_appointments(self):
+        self.assertIn("Appointments", _modules("mentor"))
+        self.assertIn("Appointments", _modules("faculty"))
 
 
 if __name__ == "__main__":
